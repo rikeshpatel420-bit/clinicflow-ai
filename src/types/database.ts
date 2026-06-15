@@ -1,0 +1,431 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+export type Database = {
+  public: {
+    Tables: {
+      clinics: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          status: "active" | "paused" | "archived";
+          timezone: string;
+          phone: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          status?: "active" | "paused" | "archived";
+          timezone?: string;
+          phone?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          slug?: string;
+          status?: "active" | "paused" | "archived";
+          timezone?: string;
+          phone?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      profiles: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          user_id: string;
+          full_name: string | null;
+          email: string | null;
+          avatar_url: string | null;
+          onboarding_completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          user_id: string;
+          full_name?: string | null;
+          email?: string | null;
+          avatar_url?: string | null;
+          onboarding_completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          user_id?: string;
+          full_name?: string | null;
+          email?: string | null;
+          avatar_url?: string | null;
+          onboarding_completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      clinic_members: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          user_id: string | null;
+          role: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status: "invited" | "active" | "suspended";
+          invited_email: string | null;
+          invited_by: string | null;
+          joined_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          user_id?: string | null;
+          role?: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status?: "invited" | "active" | "suspended";
+          invited_email?: string | null;
+          invited_by?: string | null;
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          user_id?: string | null;
+          role?: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status?: "invited" | "active" | "suspended";
+          invited_email?: string | null;
+          invited_by?: string | null;
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      patients: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          full_name: string;
+          preferred_name: string | null;
+          email: string | null;
+          phone: string | null;
+          date_of_birth: string | null;
+          status: "active" | "lead" | "inactive" | "archived";
+          source: "manual" | "website" | "phone" | "referral" | "import";
+          notes: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          full_name: string;
+          preferred_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          date_of_birth?: string | null;
+          status?: "active" | "lead" | "inactive" | "archived";
+          source?: "manual" | "website" | "phone" | "referral" | "import";
+          notes?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          full_name?: string;
+          preferred_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          date_of_birth?: string | null;
+          status?: "active" | "lead" | "inactive" | "archived";
+          source?: "manual" | "website" | "phone" | "referral" | "import";
+          notes?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      calls: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          patient_id: string | null;
+          direction: "inbound" | "outbound";
+          status: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          caller_number: string | null;
+          clinic_number: string | null;
+          started_at: string;
+          ended_at: string | null;
+          duration_seconds: number | null;
+          summary: string | null;
+          recovery_status: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_next_action: string | null;
+          recovery_updated_at: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          patient_id?: string | null;
+          direction?: "inbound" | "outbound";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          caller_number?: string | null;
+          clinic_number?: string | null;
+          started_at?: string;
+          ended_at?: string | null;
+          duration_seconds?: number | null;
+          summary?: string | null;
+          recovery_status?: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_next_action?: string | null;
+          recovery_updated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          patient_id?: string | null;
+          direction?: "inbound" | "outbound";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          caller_number?: string | null;
+          clinic_number?: string | null;
+          started_at?: string;
+          ended_at?: string | null;
+          duration_seconds?: number | null;
+          summary?: string | null;
+          recovery_status?: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_next_action?: string | null;
+          recovery_updated_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      conversations: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          patient_id: string | null;
+          channel: "sms" | "phone" | "email" | "web";
+          status: "open" | "pending" | "closed";
+          priority: "low" | "normal" | "urgent";
+          subject: string;
+          ai_summary: string | null;
+          follow_up_state: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          last_message_at: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          patient_id?: string | null;
+          channel?: "sms" | "phone" | "email" | "web";
+          status?: "open" | "pending" | "closed";
+          priority?: "low" | "normal" | "urgent";
+          subject: string;
+          ai_summary?: string | null;
+          follow_up_state?: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          last_message_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          patient_id?: string | null;
+          channel?: "sms" | "phone" | "email" | "web";
+          status?: "open" | "pending" | "closed";
+          priority?: "low" | "normal" | "urgent";
+          subject?: string;
+          ai_summary?: string | null;
+          follow_up_state?: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          last_message_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      conversation_messages: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          conversation_id: string;
+          sender_type: "patient" | "staff" | "ai" | "system";
+          direction: "inbound" | "outbound";
+          body: string;
+          delivery_status: "draft" | "queued" | "sent" | "delivered" | "failed" | "received";
+          ai_generated: boolean;
+          sent_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          conversation_id: string;
+          sender_type: "patient" | "staff" | "ai" | "system";
+          direction: "inbound" | "outbound";
+          body: string;
+          delivery_status?: "draft" | "queued" | "sent" | "delivered" | "failed" | "received";
+          ai_generated?: boolean;
+          sent_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          conversation_id?: string;
+          sender_type?: "patient" | "staff" | "ai" | "system";
+          direction?: "inbound" | "outbound";
+          body?: string;
+          delivery_status?: "draft" | "queued" | "sent" | "delivered" | "failed" | "received";
+          ai_generated?: boolean;
+          sent_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      campaigns: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          name: string;
+          status: "draft" | "scheduled" | "active" | "paused" | "completed";
+          audience: string;
+          message_template: string;
+          follow_up_state: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          scheduled_at: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          name: string;
+          status?: "draft" | "scheduled" | "active" | "paused" | "completed";
+          audience?: string;
+          message_template: string;
+          follow_up_state?: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          scheduled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          name?: string;
+          status?: "draft" | "scheduled" | "active" | "paused" | "completed";
+          audience?: string;
+          message_template?: string;
+          follow_up_state?: "not_started" | "scheduled" | "awaiting_reply" | "completed" | "failed" | "paused";
+          scheduled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      recovery_opportunities: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          call_id: string | null;
+          patient_id: string | null;
+          stage: "missed" | "contacted" | "replied" | "booked" | "lost";
+          priority_score: number;
+          estimated_revenue_pence: number;
+          booked_at: string | null;
+          lost_reason: string | null;
+          next_action: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          call_id?: string | null;
+          patient_id?: string | null;
+          stage?: "missed" | "contacted" | "replied" | "booked" | "lost";
+          priority_score?: number;
+          estimated_revenue_pence?: number;
+          booked_at?: string | null;
+          lost_reason?: string | null;
+          next_action?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          call_id?: string | null;
+          patient_id?: string | null;
+          stage?: "missed" | "contacted" | "replied" | "booked" | "lost";
+          priority_score?: number;
+          estimated_revenue_pence?: number;
+          booked_at?: string | null;
+          lost_reason?: string | null;
+          next_action?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+};
+
+export type Tables<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
+export type Inserts<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Insert"];
+export type Updates<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Update"];
+
+export type Clinic = Tables<"clinics">;
+export type Profile = Tables<"profiles">;
+export type ClinicMember = Tables<"clinic_members">;
+export type Patient = Tables<"patients">;
+export type Call = Tables<"calls">;
+export type Conversation = Tables<"conversations">;
+export type ConversationMessage = Tables<"conversation_messages">;
+export type Campaign = Tables<"campaigns">;
+export type RecoveryOpportunity = Tables<"recovery_opportunities">;

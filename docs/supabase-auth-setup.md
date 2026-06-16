@@ -17,12 +17,14 @@ Create a local `.env.local` file in the app root:
 ```txt
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+CRON_SECRET=generate-a-long-random-secret
 ```
 
 Use the project URL and anon public key from Supabase.
 
-Do not use the service role key in browser code.
+Do not use the service role key in browser code. It is server-only for trusted webhook ingestion, scheduled metrics jobs, and maintenance actions.
 
 ## 3. Configure Auth Redirect URLs
 
@@ -78,3 +80,13 @@ npm run build
 ```
 
 Both should pass before deploying.
+
+## 8. Apply Migrations
+
+Run:
+
+```bash
+supabase db push
+```
+
+The production seed is intentionally empty. Do not seed fake patient or clinic records into production.

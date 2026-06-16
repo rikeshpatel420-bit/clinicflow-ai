@@ -1,240 +1,74 @@
 # Database Schema
 
-ClinicFlow AI uses a multi-tenant Supabase Postgres schema. The tenant root is `clinics`; clinic-owned data links back through `clinic_id`.
-
-## Tables
-
-### clinics
-
-Tenant workspace for each clinic.
-
-Key columns:
-
-- `id`
-- `name`
-- `slug`
-- `status`
-- `timezone`
-- `phone`
-- `created_by`
-- `created_at`
-- `updated_at`
-- `deleted_at`
-
-### profiles
-
-Clinic-scoped application profile for each Supabase Auth user.
+ClinicFlow AI uses a multi-tenant Supabase Postgres schema. `clinics` is the tenant root and production tables are scoped by `clinic_id` wherever they contain clinic data.
 
-Key columns:
+## Migration Files
 
-- `id`
-- `clinic_id`
-- `user_id`
-- `full_name`
-- `email`
-- `avatar_url`
-- `onboarding_completed_at`
-- `created_at`
-- `updated_at`
+- `supabase/migrations/0001_multi_tenant_foundation.sql`: tenant, patient, call, conversation, campaign, and recovery foundations.
+- `supabase/migrations/0002_production_saas_backend.sql`: production SaaS hardening, RLS policies, leads, SMS events, AI audit logs, metrics, billing, provider webhooks, and UK GDPR support.
+- `supabase/seed.sql`: intentionally empty for production.
 
-### clinic_members
+## Tenant And Auth
 
-Join table connecting users to clinic workspaces.
+- `clinics`: clinic organisation workspace, UK/EU data region, retention defaults, legal identifiers.
+- `profiles`: application profile for each Supabase Auth user inside a clinic.
+- `clinic_members`: staff membership, status, and role mapping.
 
-Key columns:
+RLS helper functions:
 
-- `id`
-- `clinic_id`
-- `user_id`
-- `role`
-- `status`
-- `invited_email`
-- `invited_by`
-- `joined_at`
-- `created_at`
-- `updated_at`
+- `current_user_clinic_ids()`
+- `is_clinic_member(target_clinic_id)`
+- `has_clinic_role(target_clinic_id, allowed_roles)`
 
-Supported roles:
+## Patient And Lead Data
 
-- `owner`
-- `admin`
-- `manager`
-- `receptionist`
-- `clinician`
-- `member`
+- `patients`: patient CRM records with lawful basis, consent flags, retention date, and soft-delete support.
+- `patient_leads`: conversion pipeline for enquiries, missed calls, campaign replies, referrals, and manual leads.
+- `consent_records`: append-only channel consent history.
+- `data_subject_requests`: access, erasure, rectification, restriction, portability, and objection workflows.
 
-### patients
+## Communications
 
-Clinic-scoped patient CRM foundation.
+- `calls`: provider-neutral call records.
+- `missed_call_recovery_workflows`: operational state machine for missed-call recovery.
+- `conversations`: patient conversation threads.
+- `conversation_messages`: thread timeline messages.
+- `communication_provider_accounts`: Twilio/email/WhatsApp provider connection metadata.
+- `sms_events`: inbound/outbound SMS delivery and status ledger.
+- `webhook_events`: idempotent provider webhook processing ledger.
 
-Key columns:
+## AI Audit
 
-- `id`
-- `clinic_id`
-- `full_name`
-- `preferred_name`
-- `email`
-- `phone`
-- `date_of_birth`
-- `status`
-- `source`
-- `notes`
-- `created_by`
-- `updated_by`
-- `created_at`
-- `updated_at`
-- `deleted_at`
+- `ai_conversation_audit_logs`: draft, approval, rejection, sending, summary, and classification audit trail. The schema supports hashes and metadata so sensitive prompt/output retention can be controlled deliberately.
 
-### calls
+## Metrics And Dashboard
 
-Clinic-scoped call log foundation. This is provider-neutral until Twilio is added.
+- `dashboard_metric_snapshots`: materialised KPI snapshots for low-cost dashboard reads.
+- `recovery_opportunities`: revenue recovery pipeline for missed calls and lost leads.
 
-Key columns:
+## Billing
 
-- `id`
-- `clinic_id`
-- `patient_id`
-- `direction`
-- `status`
-- `caller_number`
-- `clinic_number`
-- `started_at`
-- `ended_at`
-- `duration_seconds`
-- `summary`
-- `recovery_status`
-- `recovery_next_action`
-- `recovery_updated_at`
-- `created_at`
-- `updated_at`
-- `deleted_at`
+- `billing_customers`: Stripe-ready customer mapping.
+- `subscription_records`: subscription state machine.
+- `usage_meter_events`: append-only usage metering.
+- `invoice_records`: invoice metadata and payment status.
 
-## Audit Timestamps
+## Audit
 
-Every table includes:
+- `audit_events`: internal audit-safe event history for financial, access, patient, and operational activity.
 
-- `created_at`
-- `updated_at`
+## Access Model
 
-Soft-delete-ready tables also include:
+- Owners/admins manage clinic, team, billing, provider accounts, data subject requests, and audit visibility.
+- Managers manage leads, campaigns, recovery, and analytics workflows.
+- Receptionists manage patient communications and missed-call recovery.
+- Clinicians can access patient and conversation context.
+- Members have read-oriented access.
 
-- `deleted_at`
+## Type Generation
 
-The migration creates a `set_updated_at()` trigger function and applies it to all foundation tables.
+After applying migrations, regenerate Supabase types:
 
-## Row Level Security Preparation
-
-RLS is enabled on:
-
-- `clinics`
-- `profiles`
-- `clinic_members`
-- `patients`
-- `calls`
-
-Policies should be added after the app has real auth actions and tested membership rules.
-
-## Local Files
-
-- Migration: `supabase/migrations/0001_multi_tenant_foundation.sql`
-- Seed structure: `supabase/seed.sql`
-- TypeScript types: `src/types/database.ts`
-
-## Onboarding Data Flow
-
-The onboarding form creates:
-
-1. A `clinics` row for the tenant workspace.
-2. A clinic-scoped `profiles` row for the authenticated owner.
-3. A `clinic_members` row with `role = 'owner'` and `status = 'active'`.
-
-This pattern keeps the dashboard clinic-scoped from the first real record.
-
-## Dashboard Data Flow
-
-The dashboard loader:
-
-1. Reads the current authenticated user.
-2. Finds the first active `clinic_members` row.
-3. Loads the matching `clinics` row.
-4. Loads the matching clinic-scoped `profiles` row.
-5. Loads recent `patients` for that `clinic_id`.
-
-Dashboard preview call rows may still be derived from phone-sourced patients. The dedicated `/calls` module reads from the provider-neutral `calls` table.
-
-When Supabase environment variables are missing, the dashboard uses demo fallback data so local UI development still works.
-
-## Calls Data Flow
-
-The `/calls` route uses a provider-neutral call log pattern:
-
-1. Read the authenticated user.
-2. Resolve the first active `clinic_members` row.
-3. Load the tenant `clinics` row.
-4. Query `calls` with the resolved `clinic_id`.
-5. Render status badges for missed, answered, recovered, voicemail, and queued calls.
-
-The call detail route is a placeholder for future transcripts, recovery activity, notes, and Twilio metadata.
-
-When Supabase environment variables are missing, `/calls` uses demo fallback call data.
-
-## Missed-Call Recovery State
-
-The `calls` table now includes a safe recovery workflow state model:
-
-- `not_started`
-- `queued`
-- `sms_draft`
-- `awaiting_reply`
-- `recovered`
-- `closed`
-- `failed`
-
-The Twilio webhook placeholders can detect missed-call statuses and generate a recovery state, but they do not send SMS or persist live webhook data yet.
-
-## Revenue Recovery Pipeline
-
-The `recovery_opportunities` table tracks measurable recovery from missed calls and lost leads.
-
-Pipeline stages:
-
-- `missed`
-- `contacted`
-- `replied`
-- `booked`
-- `lost`
-
-Key fields:
-
-- `clinic_id`
-- `call_id`
-- `patient_id`
-- `stage`
-- `priority_score`
-- `estimated_revenue_pence`
-- `booked_at`
-- `lost_reason`
-- `next_action`
-
-The `/recovery` page uses this model to calculate recovered revenue, conversion rate, booked leads, and high-priority recovery opportunities.
-
-## Patient CRM Data Flow
-
-The `/patients` route follows the same clinic-scoped access pattern:
-
-1. Read the authenticated user.
-2. Resolve the first active `clinic_members` row.
-3. Load the tenant `clinics` row.
-4. Query `patients` with the resolved `clinic_id`.
-5. Apply search and status filters within that clinic view.
-
-The patient CRM currently includes:
-
-- patient list page
-- search and status filter UI
-- patient detail placeholder route
-- add-patient placeholder route
-- demo fallback patients when Supabase env vars are missing
-- loading, error, and empty states
-
-Patient creation is intentionally still a placeholder. Real insert actions should be added after auth forms and RLS policies are fully tested.
+```bash
+supabase gen types typescript --project-id <project-ref> --schema public > src/types/database.ts
+```

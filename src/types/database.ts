@@ -408,6 +408,288 @@ export type Database = {
         };
         Relationships: [];
       };
+      patient_leads: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          patient_id: string | null;
+          source: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
+          status: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          priority: "low" | "normal" | "high" | "urgent";
+          owner_user_id: string | null;
+          estimated_value_pence: number;
+          lead_score: number;
+          enquiry_summary: string | null;
+          loss_reason: string | null;
+          next_follow_up_at: string | null;
+          converted_at: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          patient_id?: string | null;
+          source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
+          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          priority?: "low" | "normal" | "high" | "urgent";
+          owner_user_id?: string | null;
+          estimated_value_pence?: number;
+          lead_score?: number;
+          enquiry_summary?: string | null;
+          loss_reason?: string | null;
+          next_follow_up_at?: string | null;
+          converted_at?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          patient_id?: string | null;
+          source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
+          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          priority?: "low" | "normal" | "high" | "urgent";
+          owner_user_id?: string | null;
+          estimated_value_pence?: number;
+          lead_score?: number;
+          enquiry_summary?: string | null;
+          loss_reason?: string | null;
+          next_follow_up_at?: string | null;
+          converted_at?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      missed_call_recovery_workflows: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          call_id: string | null;
+          patient_id: string | null;
+          lead_id: string | null;
+          state:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel: "sms" | "phone" | "email" | "whatsapp";
+          current_step: number;
+          max_steps: number;
+          next_action_at: string | null;
+          assigned_user_id: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          call_id?: string | null;
+          patient_id?: string | null;
+          lead_id?: string | null;
+          state?:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel?: "sms" | "phone" | "email" | "whatsapp";
+          current_step?: number;
+          max_steps?: number;
+          next_action_at?: string | null;
+          assigned_user_id?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          call_id?: string | null;
+          patient_id?: string | null;
+          lead_id?: string | null;
+          state?:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel?: "sms" | "phone" | "email" | "whatsapp";
+          current_step?: number;
+          max_steps?: number;
+          next_action_at?: string | null;
+          assigned_user_id?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      sms_events: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          provider_account_id: string | null;
+          conversation_id: string | null;
+          patient_id: string | null;
+          workflow_id: string | null;
+          provider: "twilio" | "manual";
+          provider_message_id: string | null;
+          direction: "inbound" | "outbound";
+          status: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
+          from_number: string | null;
+          to_number: string | null;
+          body_preview: string | null;
+          error_code: string | null;
+          error_message: string | null;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          provider_account_id?: string | null;
+          conversation_id?: string | null;
+          patient_id?: string | null;
+          workflow_id?: string | null;
+          provider?: "twilio" | "manual";
+          provider_message_id?: string | null;
+          direction: "inbound" | "outbound";
+          status?: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
+          from_number?: string | null;
+          to_number?: string | null;
+          body_preview?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          occurred_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          provider_account_id?: string | null;
+          conversation_id?: string | null;
+          patient_id?: string | null;
+          workflow_id?: string | null;
+          provider?: "twilio" | "manual";
+          provider_message_id?: string | null;
+          direction?: "inbound" | "outbound";
+          status?: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
+          from_number?: string | null;
+          to_number?: string | null;
+          body_preview?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+          occurred_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      dashboard_metric_snapshots: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          period_start: string;
+          period_end: string;
+          missed_calls: number;
+          recovered_calls: number;
+          new_leads: number;
+          booked_leads: number;
+          sms_sent: number;
+          revenue_recovered_pence: number;
+          calculated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          period_start: string;
+          period_end: string;
+          missed_calls?: number;
+          recovered_calls?: number;
+          new_leads?: number;
+          booked_leads?: number;
+          sms_sent?: number;
+          revenue_recovered_pence?: number;
+          calculated_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          period_start?: string;
+          period_end?: string;
+          missed_calls?: number;
+          recovered_calls?: number;
+          new_leads?: number;
+          booked_leads?: number;
+          sms_sent?: number;
+          revenue_recovered_pence?: number;
+          calculated_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      audit_events: {
+        Row: {
+          id: string;
+          clinic_id: string | null;
+          actor_user_id: string | null;
+          event_type: string;
+          entity_table: string;
+          entity_id: string | null;
+          risk_level: "low" | "medium" | "high";
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id?: string | null;
+          actor_user_id?: string | null;
+          event_type: string;
+          entity_table: string;
+          entity_id?: string | null;
+          risk_level?: "low" | "medium" | "high";
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string | null;
+          actor_user_id?: string | null;
+          event_type?: string;
+          entity_table?: string;
+          entity_id?: string | null;
+          risk_level?: "low" | "medium" | "high";
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -429,3 +711,8 @@ export type Conversation = Tables<"conversations">;
 export type ConversationMessage = Tables<"conversation_messages">;
 export type Campaign = Tables<"campaigns">;
 export type RecoveryOpportunity = Tables<"recovery_opportunities">;
+export type PatientLead = Tables<"patient_leads">;
+export type MissedCallRecoveryWorkflow = Tables<"missed_call_recovery_workflows">;
+export type SmsEvent = Tables<"sms_events">;
+export type DashboardMetricSnapshot = Tables<"dashboard_metric_snapshots">;
+export type AuditEvent = Tables<"audit_events">;

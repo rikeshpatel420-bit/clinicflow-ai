@@ -1,13 +1,13 @@
 # ClinicFlow AI
 
-Production-oriented demo scaffold for a multi-tenant healthcare operations SaaS focused on clinic revenue recovery, patient communication, analytics, and enterprise operations.
+Production-oriented multi-tenant healthcare operations SaaS focused on clinic revenue recovery, patient communication, analytics, and enterprise operations.
 
 ## Current Mode
 
-- Deterministic demo data only.
-- Supabase-ready auth and tenant patterns.
-- Stripe, Twilio, and OpenAI are placeholders only.
-- No external API calls are required to run locally.
+- Supabase backend with tenant-scoped database migrations and Row Level Security.
+- Empty production seed: no fake clinics, patients, communications, or billing records are inserted.
+- Stripe, Twilio, and OpenAI remain provider-ready abstractions only.
+- The UI can still run locally without provider API calls.
 
 ## Local Development
 
@@ -40,7 +40,20 @@ npm run build
 - `supabase` - migration and seed foundations.
 - `docs` - setup, architecture, deployment, and onboarding notes.
 
+## Backend Setup
+
+Apply Supabase migrations before using real production data:
+
+```powershell
+supabase db push
+```
+
+Read the backend contract and environment variable guide:
+
+- `docs/production-backend.md`
+- `docs/database-schema.md`
+
 ## Deployment
 
-Use Vercel for the Next.js app. Keep external provider credentials empty until live Supabase, Stripe, Twilio, and OpenAI phases are intentionally enabled.
+Use Vercel for the Next.js app. Add Supabase production variables first, then enable Stripe, Twilio, and OpenAI variables only when those integrations are intentionally launched.
 

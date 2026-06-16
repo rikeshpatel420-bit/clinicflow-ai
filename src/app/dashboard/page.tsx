@@ -7,6 +7,7 @@ import { MissedCallsTable } from "@/components/dashboard/missed-calls-table";
 import { MobileDashboardNav } from "@/components/dashboard/mobile-dashboard-nav";
 import { WorkflowActivityFeed } from "@/components/dashboard/workflow-activity-feed";
 import { EmptyState } from "@/components/ui/empty-state";
+import { getActiveClinicMembership } from "@/lib/auth/clinic-workspace";
 import { getClinicDashboardData } from "@/lib/dashboard/live-data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -19,6 +20,14 @@ export default async function DashboardPage() {
 
   if (isSupabaseConfigured && !user) {
     redirect("/login");
+  }
+
+  if (isSupabaseConfigured && user) {
+    const membership = await getActiveClinicMembership(user.id);
+
+    if (!membership) {
+      redirect("/onboarding");
+    }
   }
 
   const dashboard = await getClinicDashboardData(user?.id ?? null);

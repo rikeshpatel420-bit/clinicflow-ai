@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { logoutAction } from "@/app/auth/actions";
 import type { DashboardClinicContext } from "@/lib/dashboard/live-data";
 
 export function DashboardHeader({ clinic }: { clinic: DashboardClinicContext }) {
@@ -28,6 +29,14 @@ export function DashboardHeader({ clinic }: { clinic: DashboardClinicContext }) 
           >
             Review calls
           </Link>
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500"
+            >
+              Log out
+            </button>
+          </form>
         </div>
       </div>
     </header>

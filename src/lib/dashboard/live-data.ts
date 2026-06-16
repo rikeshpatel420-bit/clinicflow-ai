@@ -1,11 +1,11 @@
 import type {
-  AuditEvent,
+  AiAuditLog,
   Call,
   Clinic,
-  ClinicMember,
+  ClinicUser,
   DashboardMetricSnapshot,
-  MissedCallRecoveryWorkflow,
   PatientLead,
+  RecoveryWorkflow,
   SmsEvent,
 } from "@/types/database";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -88,7 +88,7 @@ function shortId(id: string) {
   return id.slice(0, 8);
 }
 
-function callRecoveryState(call: Call, workflow?: MissedCallRecoveryWorkflow) {
+function callRecoveryState(call: Call, workflow?: RecoveryWorkflow) {
   if (workflow) {
     return formatLabel(workflow.state);
   }
@@ -125,10 +125,10 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null): DashboardMetric
   ];
 }
 
-function buildMissedCallRows(calls: Call[], workflows: MissedCallRecoveryWorkflow[], smsEvents: SmsEvent[]): MissedCallRow[] {
+function buildMissedCallRows(calls: Call[], workflows: RecoveryWorkflow[], smsEvents: SmsEvent[]): MissedCallRow[] {
   return calls.map((call) => {
     const workflow = workflows.find((item) => item.call_id === call.id);
-    const smsEvent = workflow ? smsEvents.find((event) => event.workflow_id === workflow.id) : null;
+    const smsEvent = workflow ? smsEvents.find((event) => event.recovery_workflow_id === workflow.id) : null;
 
     return {
       id: call.id,
@@ -160,7 +160,7 @@ function buildLeadColumns(leads: PatientLead[]): LeadPipelineColumn[] {
   }));
 }
 
-function buildActivity(workflows: MissedCallRecoveryWorkflow[], auditEvents: AuditEvent[]): WorkflowActivityItem[] {
+function buildActivity(workflows: RecoveryWorkflow[], auditEvents: AiAuditLog[]): WorkflowActivityItem[] {
   const workflowItems = workflows.map((workflow) => ({
     description: `${formatLabel(workflow.channel)} workflow step ${workflow.current_step} of ${workflow.max_steps}.`,
     id: workflow.id,
@@ -170,11 +170,11 @@ function buildActivity(workflows: MissedCallRecoveryWorkflow[], auditEvents: Aud
   }));
 
   const auditItems = auditEvents.map((event) => ({
-    description: `${formatLabel(event.entity_table)} event recorded with ${event.risk_level} risk level.`,
+    description: `${formatLabel(event.model_provider)} action recorded with ${event.safety_status} safety status.`,
     id: event.id,
-    state: formatLabel(event.risk_level),
+    state: formatLabel(event.safety_status),
     timestamp: formatDateTime(event.created_at),
-    title: formatLabel(event.event_type),
+    title: formatLabel(event.action),
   }));
 
   return [...workflowItems, ...auditItems]
@@ -203,13 +203,13 @@ export async function getClinicDashboardData(userId: string | null): Promise<Cli
 
   const supabase = await createSupabaseServerClient();
   const { data: membership, error: membershipError } = await supabase
-    .from("clinic_members")
+    .from("clinic_users")
     .select("*")
-    .eq("user_id", userId)
+    .eq("auth_user_id", userId)
     .eq("status", "active")
     .order("created_at", { ascending: true })
     .limit(1)
-    .maybeSingle<ClinicMember>();
+    .maybeSingle<ClinicUser>();
 
   if (membershipError) {
     return emptyDashboard("Could not load clinic membership.");
@@ -262,20 +262,20 @@ export async function getClinicDashboardData(userId: string | null): Promise<Cli
       .limit(30)
       .returns<PatientLead[]>(),
     supabase
-      .from("missed_call_recovery_workflows")
+      .from("recovery_workflows")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
       .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(10)
-      .returns<MissedCallRecoveryWorkflow[]>(),
+      .returns<RecoveryWorkflow[]>(),
     supabase
-      .from("audit_events")
+      .from("ai_audit_logs")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
       .order("created_at", { ascending: false })
       .limit(10)
-      .returns<AuditEvent[]>(),
+      .returns<AiAuditLog[]>(),
   ]);
 
   const loadError = clinicError || callsError || smsError || leadsError || workflowsError || auditError;

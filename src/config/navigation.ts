@@ -1,5 +1,6 @@
 export const protectedRoutes = [
   "/dashboard",
+  "/onboarding",
   "/operations",
   "/alerts",
   "/activity",
@@ -97,4 +98,3 @@ export const dashboardNavItems = [
   { href: "/team", label: "Team" },
   { href: "/settings", label: "Settings" },
 ];
-

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getActiveClinicMembership } from "@/lib/auth/clinic-workspace";
+import { getCurrentUser } from "@/lib/supabase/server";
 import { OnboardingForm } from "./onboarding-form";
 
 const steps = [
@@ -8,7 +11,21 @@ const steps = [
   "Review dashboard setup",
 ];
 
-export default function OnboardingPage() {
+export const dynamic = "force-dynamic";
+
+export default async function OnboardingPage() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login?next=/onboarding");
+  }
+
+  const membership = await getActiveClinicMembership(user.id);
+
+  if (membership) {
+    redirect("/dashboard");
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f7faf9] px-6 py-12 text-[#17211f]">
       <section className="w-full max-w-2xl rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
@@ -23,7 +40,7 @@ export default function OnboardingPage() {
           <p className="text-sm font-semibold text-[#087968]">Clinic onboarding</p>
           <h1 className="mt-3 text-3xl font-semibold text-[#10201d]">Set up your clinic workspace</h1>
           <p className="mt-3 leading-7 text-[#65736f]">
-            Create the tenant workspace, owner profile, and owner membership pattern used by
+            Create the tenant workspace, app user profile, and owner membership used by
             the clinic-scoped dashboard.
           </p>
         </div>
@@ -40,10 +57,6 @@ export default function OnboardingPage() {
             </div>
           ))}
         </div>
-
-        <Link href="/dashboard" className="mt-8 inline-flex text-sm font-semibold text-[#087968] hover:text-[#0a8f7b]">
-          Continue to dashboard
-        </Link>
       </section>
     </main>
   );

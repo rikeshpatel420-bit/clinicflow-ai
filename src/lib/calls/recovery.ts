@@ -5,6 +5,7 @@ export type CallRecoveryStatus = Call["recovery_status"];
 export const recoveryStatusLabels: Record<CallRecoveryStatus, string> = {
   awaiting_reply: "Awaiting reply",
   closed: "Closed",
+  drafted: "Drafted",
   failed: "Failed",
   not_started: "Not started",
   queued: "Queued",
@@ -15,6 +16,7 @@ export const recoveryStatusLabels: Record<CallRecoveryStatus, string> = {
 export const recoveryToneByStatus: Record<CallRecoveryStatus, string> = {
   awaiting_reply: "bg-blue-50 text-blue-700",
   closed: "bg-slate-100 text-slate-700",
+  drafted: "bg-purple-50 text-purple-700",
   failed: "bg-red-50 text-red-700",
   not_started: "bg-slate-100 text-slate-700",
   queued: "bg-amber-50 text-amber-800",

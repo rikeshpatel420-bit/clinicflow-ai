@@ -8,7 +8,7 @@ export type Database = {
           id: string;
           name: string;
           slug: string;
-          status: "active" | "paused" | "archived";
+          status: "active" | "paused" | "suspended" | "archived";
           timezone: string;
           phone: string | null;
           created_by: string | null;
@@ -20,7 +20,7 @@ export type Database = {
           id?: string;
           name: string;
           slug: string;
-          status?: "active" | "paused" | "archived";
+          status?: "active" | "paused" | "suspended" | "archived";
           timezone?: string;
           phone?: string | null;
           created_by?: string | null;
@@ -32,13 +32,91 @@ export type Database = {
           id?: string;
           name?: string;
           slug?: string;
-          status?: "active" | "paused" | "archived";
+          status?: "active" | "paused" | "suspended" | "archived";
           timezone?: string;
           phone?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      users: {
+        Row: {
+          id: string;
+          auth_user_id: string;
+          email: string | null;
+          full_name: string | null;
+          avatar_url: string | null;
+          status: "active" | "disabled";
+          last_seen_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          auth_user_id: string;
+          email?: string | null;
+          full_name?: string | null;
+          avatar_url?: string | null;
+          status?: "active" | "disabled";
+          last_seen_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          auth_user_id?: string;
+          email?: string | null;
+          full_name?: string | null;
+          avatar_url?: string | null;
+          status?: "active" | "disabled";
+          last_seen_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      clinic_users: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          user_id: string | null;
+          auth_user_id: string | null;
+          role: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status: "invited" | "active" | "suspended" | "removed";
+          invited_email: string | null;
+          invited_by: string | null;
+          joined_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          user_id?: string | null;
+          auth_user_id?: string | null;
+          role?: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status?: "invited" | "active" | "suspended" | "removed";
+          invited_email?: string | null;
+          invited_by?: string | null;
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          user_id?: string | null;
+          auth_user_id?: string | null;
+          role?: "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
+          status?: "invited" | "active" | "suspended" | "removed";
+          invited_email?: string | null;
+          invited_by?: string | null;
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -175,16 +253,21 @@ export type Database = {
         Row: {
           id: string;
           clinic_id: string;
+          lead_id: string | null;
           patient_id: string | null;
           direction: "inbound" | "outbound";
-          status: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          status: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          caller_number_hash: string | null;
+          caller_number_last4: string | null;
           caller_number: string | null;
           clinic_number: string | null;
+          provider: "manual" | "twilio";
+          provider_call_id: string | null;
           started_at: string;
           ended_at: string | null;
           duration_seconds: number | null;
           summary: string | null;
-          recovery_status: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action: string | null;
           recovery_updated_at: string | null;
           created_at: string;
@@ -194,16 +277,21 @@ export type Database = {
         Insert: {
           id?: string;
           clinic_id: string;
+          lead_id?: string | null;
           patient_id?: string | null;
           direction?: "inbound" | "outbound";
-          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          caller_number_hash?: string | null;
+          caller_number_last4?: string | null;
           caller_number?: string | null;
           clinic_number?: string | null;
+          provider?: "manual" | "twilio";
+          provider_call_id?: string | null;
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
           summary?: string | null;
-          recovery_status?: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
           created_at?: string;
@@ -213,16 +301,21 @@ export type Database = {
         Update: {
           id?: string;
           clinic_id?: string;
+          lead_id?: string | null;
           patient_id?: string | null;
           direction?: "inbound" | "outbound";
-          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          caller_number_hash?: string | null;
+          caller_number_last4?: string | null;
           caller_number?: string | null;
           clinic_number?: string | null;
+          provider?: "manual" | "twilio";
+          provider_call_id?: string | null;
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
           summary?: string | null;
-          recovery_status?: "not_started" | "queued" | "sms_draft" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
           created_at?: string;
@@ -549,10 +642,88 @@ export type Database = {
         };
         Relationships: [];
       };
+      recovery_workflows: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          call_id: string | null;
+          lead_id: string | null;
+          state:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel: "sms" | "phone" | "email" | "whatsapp";
+          current_step: number;
+          max_steps: number;
+          next_action_at: string | null;
+          assigned_user_id: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          call_id?: string | null;
+          lead_id?: string | null;
+          state?:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel?: "sms" | "phone" | "email" | "whatsapp";
+          current_step?: number;
+          max_steps?: number;
+          next_action_at?: string | null;
+          assigned_user_id?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          call_id?: string | null;
+          lead_id?: string | null;
+          state?:
+            | "queued"
+            | "drafted"
+            | "awaiting_staff_approval"
+            | "message_queued"
+            | "awaiting_patient_reply"
+            | "booked"
+            | "closed"
+            | "failed";
+          channel?: "sms" | "phone" | "email" | "whatsapp";
+          current_step?: number;
+          max_steps?: number;
+          next_action_at?: string | null;
+          assigned_user_id?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       sms_events: {
         Row: {
           id: string;
           clinic_id: string;
+          lead_id: string | null;
+          call_id: string | null;
+          recovery_workflow_id: string | null;
           provider_account_id: string | null;
           conversation_id: string | null;
           patient_id: string | null;
@@ -572,6 +743,9 @@ export type Database = {
         Insert: {
           id?: string;
           clinic_id: string;
+          lead_id?: string | null;
+          call_id?: string | null;
+          recovery_workflow_id?: string | null;
           provider_account_id?: string | null;
           conversation_id?: string | null;
           patient_id?: string | null;
@@ -591,6 +765,9 @@ export type Database = {
         Update: {
           id?: string;
           clinic_id?: string;
+          lead_id?: string | null;
+          call_id?: string | null;
+          recovery_workflow_id?: string | null;
           provider_account_id?: string | null;
           conversation_id?: string | null;
           patient_id?: string | null;
@@ -690,6 +867,84 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_audit_logs: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          lead_id: string | null;
+          call_id: string | null;
+          recovery_workflow_id: string | null;
+          actor_user_id: string | null;
+          action:
+            | "draft_created"
+            | "draft_edited"
+            | "draft_approved"
+            | "draft_rejected"
+            | "message_sent"
+            | "summary_created"
+            | "classification_created";
+          model_provider: "none" | "openai" | "manual";
+          model_name: string | null;
+          prompt_version: string | null;
+          input_hash: string | null;
+          output_hash: string | null;
+          safety_status: "not_required" | "passed" | "needs_review" | "blocked";
+          human_approved: boolean;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          lead_id?: string | null;
+          call_id?: string | null;
+          recovery_workflow_id?: string | null;
+          actor_user_id?: string | null;
+          action:
+            | "draft_created"
+            | "draft_edited"
+            | "draft_approved"
+            | "draft_rejected"
+            | "message_sent"
+            | "summary_created"
+            | "classification_created";
+          model_provider?: "none" | "openai" | "manual";
+          model_name?: string | null;
+          prompt_version?: string | null;
+          input_hash?: string | null;
+          output_hash?: string | null;
+          safety_status?: "not_required" | "passed" | "needs_review" | "blocked";
+          human_approved?: boolean;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          lead_id?: string | null;
+          call_id?: string | null;
+          recovery_workflow_id?: string | null;
+          actor_user_id?: string | null;
+          action?:
+            | "draft_created"
+            | "draft_edited"
+            | "draft_approved"
+            | "draft_rejected"
+            | "message_sent"
+            | "summary_created"
+            | "classification_created";
+          model_provider?: "none" | "openai" | "manual";
+          model_name?: string | null;
+          prompt_version?: string | null;
+          input_hash?: string | null;
+          output_hash?: string | null;
+          safety_status?: "not_required" | "passed" | "needs_review" | "blocked";
+          human_approved?: boolean;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -703,6 +958,8 @@ export type Inserts<T extends keyof Database["public"]["Tables"]> = Database["pu
 export type Updates<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Update"];
 
 export type Clinic = Tables<"clinics">;
+export type AppUser = Tables<"users">;
+export type ClinicUser = Tables<"clinic_users">;
 export type Profile = Tables<"profiles">;
 export type ClinicMember = Tables<"clinic_members">;
 export type Patient = Tables<"patients">;
@@ -712,7 +969,9 @@ export type ConversationMessage = Tables<"conversation_messages">;
 export type Campaign = Tables<"campaigns">;
 export type RecoveryOpportunity = Tables<"recovery_opportunities">;
 export type PatientLead = Tables<"patient_leads">;
+export type RecoveryWorkflow = Tables<"recovery_workflows">;
 export type MissedCallRecoveryWorkflow = Tables<"missed_call_recovery_workflows">;
 export type SmsEvent = Tables<"sms_events">;
 export type DashboardMetricSnapshot = Tables<"dashboard_metric_snapshots">;
+export type AiAuditLog = Tables<"ai_audit_logs">;
 export type AuditEvent = Tables<"audit_events">;

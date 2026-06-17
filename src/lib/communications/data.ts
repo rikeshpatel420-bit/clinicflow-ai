@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Campaign, Clinic, Conversation, ConversationMessage } from "@/types/database";
+import type { Campaign, Clinic, Conversation, ConversationMessage, SmsEvent } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -106,6 +106,44 @@ function buildData(input: Omit<CommunicationsData, "activity" | "emptyMessage">)
   };
 }
 
+function conversationFromSmsEvent(event: SmsEvent): Conversation {
+  return {
+    ai_summary: event.body_preview,
+    channel: "sms",
+    clinic_id: event.clinic_id,
+    created_at: event.occurred_at,
+    deleted_at: null,
+    follow_up_state: event.direction === "inbound" ? "awaiting_reply" : "scheduled",
+    id: `sms-thread-${event.id}`,
+    last_message_at: event.occurred_at,
+    patient_id: event.patient_id,
+    priority: event.direction === "inbound" ? "urgent" : "normal",
+    status: event.direction === "inbound" ? "open" : "pending",
+    subject: event.direction === "inbound" ? "Patient SMS reply" : "Recovery SMS sent",
+    updated_at: event.occurred_at,
+  };
+}
+
+function messageStatusFromSmsEvent(status: SmsEvent["status"]): ConversationMessage["delivery_status"] {
+  if (status === "cancelled" || status === "undelivered") return "failed";
+  return status;
+}
+
+function messageFromSmsEvent(event: SmsEvent): ConversationMessage {
+  return {
+    ai_generated: event.direction === "outbound",
+    body: event.body_preview ?? "SMS event recorded.",
+    clinic_id: event.clinic_id,
+    conversation_id: `sms-thread-${event.id}`,
+    created_at: event.occurred_at,
+    delivery_status: messageStatusFromSmsEvent(event.status),
+    direction: event.direction,
+    id: event.id,
+    sender_type: event.direction === "inbound" ? "patient" : "ai",
+    sent_at: event.occurred_at,
+  };
+}
+
 export function getDemoCommunicationsData(): CommunicationsData {
   return buildData({
     campaigns: demoCampaigns,
@@ -136,41 +174,26 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
     });
   }
 
-  const [{ data: clinic }, conversationsResult, campaignsResult] = await Promise.all([
+  const [{ data: clinic, error: clinicError }, { data: smsEvents, error: smsError }] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
     supabase
-      .from("conversations")
+      .from("sms_events")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
-      .is("deleted_at", null)
-      .order("last_message_at", { ascending: false })
-      .returns<Conversation[]>(),
-    supabase
-      .from("campaigns")
-      .select("*")
-      .eq("clinic_id", membership.clinic_id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .returns<Campaign[]>(),
+      .order("occurred_at", { ascending: false })
+      .limit(25)
+      .returns<SmsEvent[]>(),
   ]);
 
-  const conversationIds = (conversationsResult.data ?? []).map((conversation) => conversation.id);
-  const messagesResult =
-    conversationIds.length > 0
-      ? await supabase
-          .from("conversation_messages")
-          .select("*")
-          .in("conversation_id", conversationIds)
-          .order("sent_at", { ascending: true })
-          .returns<ConversationMessage[]>()
-      : { data: [] as ConversationMessage[], error: null };
+  const conversations = (smsEvents ?? []).map(conversationFromSmsEvent);
+  const messages = (smsEvents ?? []).map(messageFromSmsEvent);
 
   return buildData({
-    campaigns: campaignsResult.data ?? [],
+    campaigns: [],
     clinic: clinic ?? null,
-    conversations: conversationsResult.data ?? [],
-    error: conversationsResult.error || campaignsResult.error || messagesResult.error ? "Could not load communication records." : null,
-    messages: messagesResult.data ?? [],
+    conversations,
+    error: clinicError || smsError ? "Could not load communication records." : null,
+    messages,
     source: "supabase",
   });
 }

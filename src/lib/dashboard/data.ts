@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Clinic, Patient, Profile } from "@/types/database";
+import type { Clinic, Patient, PatientLead, Profile } from "@/types/database";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -102,6 +102,44 @@ function buildActivity(patients: Patient[]) {
   }));
 }
 
+function patientSourceFromLead(source: PatientLead["source"]): Patient["source"] {
+  if (source === "website") return "website";
+  if (source === "phone" || source === "missed_call") return "phone";
+  if (source === "referral") return "referral";
+  if (source === "import") return "import";
+  return "manual";
+}
+
+function patientStatusFromLead(status: PatientLead["status"]): Patient["status"] {
+  if (status === "booked" || status === "won") return "active";
+  if (status === "archived") return "archived";
+  if (status === "lost") return "inactive";
+  return "lead";
+}
+
+function patientFromLead(lead: PatientLead): Patient {
+  const summary = lead.enquiry_summary?.replace(/^\[ClinicFlow demo\]\s*/, "").trim();
+  const fallbackName = `${patientSourceFromLead(lead.source)} lead ${lead.id.slice(0, 8)}`;
+
+  return {
+    clinic_id: lead.clinic_id,
+    created_at: lead.created_at,
+    created_by: lead.created_by,
+    date_of_birth: null,
+    deleted_at: lead.deleted_at,
+    email: null,
+    full_name: summary?.split(":")[0]?.trim() || fallbackName,
+    id: lead.id,
+    notes: lead.enquiry_summary,
+    phone: null,
+    preferred_name: null,
+    source: patientSourceFromLead(lead.source),
+    status: patientStatusFromLead(lead.status),
+    updated_at: lead.updated_at,
+    updated_by: lead.updated_by,
+  };
+}
+
 function buildDashboardData(input: {
   clinic: Clinic | null;
   error?: string | null;
@@ -152,30 +190,23 @@ export async function getDashboardData(user: Pick<User, "email" | "id" | "user_m
     });
   }
 
-  const [{ data: clinic, error: clinicError }, { data: profile }, { data: patients, error: patientsError }] =
-    await Promise.all([
-      supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
-      supabase
-        .from("profiles")
-        .select("*")
-        .eq("clinic_id", membership.clinic_id)
-        .eq("user_id", user.id)
-        .maybeSingle<Profile>(),
-      supabase
-        .from("patients")
-        .select("*")
-        .eq("clinic_id", membership.clinic_id)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(8)
-        .returns<Patient[]>(),
-    ]);
+  const [{ data: clinic, error: clinicError }, { data: leads, error: leadsError }] = await Promise.all([
+    supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
+    supabase
+      .from("patient_leads")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(8)
+      .returns<PatientLead[]>(),
+  ]);
 
   return buildDashboardData({
     clinic: clinic ?? null,
-    error: clinicError || patientsError ? "Some dashboard data could not be loaded." : null,
-    patients: patients ?? [],
-    profile: profile ?? null,
+    error: clinicError || leadsError ? "Some dashboard data could not be loaded." : null,
+    patients: (leads ?? []).map(patientFromLead),
+    profile: null,
     source: "supabase",
   });
 }

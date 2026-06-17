@@ -1,6 +1,5 @@
 import type { User } from "@supabase/supabase-js";
 import type {
-  AiAuditLog,
   Call,
   Clinic,
   DashboardMetricSnapshot,
@@ -161,24 +160,15 @@ function buildLeadColumns(leads: PatientLead[]): LeadPipelineColumn[] {
   }));
 }
 
-function buildActivity(workflows: RecoveryWorkflow[], auditEvents: AiAuditLog[]): WorkflowActivityItem[] {
-  const workflowItems = workflows.map((workflow) => ({
+function buildActivity(workflows: RecoveryWorkflow[]): WorkflowActivityItem[] {
+  return workflows
+    .map((workflow) => ({
     description: `${formatLabel(workflow.channel)} workflow step ${workflow.current_step} of ${workflow.max_steps}.`,
     id: workflow.id,
     state: formatLabel(workflow.state),
     timestamp: formatDateTime(workflow.updated_at),
     title: `Workflow ${shortId(workflow.id)}`,
-  }));
-
-  const auditItems = auditEvents.map((event) => ({
-    description: `${formatLabel(event.model_provider)} action recorded with ${event.safety_status} safety status.`,
-    id: event.id,
-    state: formatLabel(event.safety_status),
-    timestamp: formatDateTime(event.created_at),
-    title: formatLabel(event.action),
-  }));
-
-  return [...workflowItems, ...auditItems]
+  }))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 8);
 }
@@ -216,7 +206,6 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
     { data: smsEvents, error: smsError },
     { data: leads, error: leadsError },
     { data: workflows, error: workflowsError },
-    { data: auditEvents, error: auditError },
   ] = await Promise.all([
     supabase.from("clinics").select("id,name,status,timezone").eq("id", membership.clinic_id).maybeSingle<DashboardClinicContext>(),
     supabase
@@ -259,19 +248,12 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .order("updated_at", { ascending: false })
       .limit(10)
       .returns<RecoveryWorkflow[]>(),
-    supabase
-      .from("ai_audit_logs")
-      .select("*")
-      .eq("clinic_id", membership.clinic_id)
-      .order("created_at", { ascending: false })
-      .limit(10)
-      .returns<AiAuditLog[]>(),
   ]);
 
-  const loadError = clinicError || callsError || smsError || leadsError || workflowsError || auditError;
+  const loadError = clinicError || callsError || smsError || leadsError || workflowsError;
 
   return {
-    activity: buildActivity(workflows ?? [], auditEvents ?? []),
+    activity: buildActivity(workflows ?? []),
     clinic: clinic ?? null,
     error: loadError ? "Some dashboard data could not be loaded." : null,
     leadColumns: buildLeadColumns(leads ?? []),

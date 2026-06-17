@@ -182,13 +182,6 @@ function workflowState(index: number): Inserts<"recovery_workflows">["state"] {
   return "queued";
 }
 
-function opportunityStage(index: number): Inserts<"recovery_opportunities">["stage"] {
-  if ([0, 3, 8].includes(index)) return "booked";
-  if ([1, 5, 9].includes(index)) return "replied";
-  if ([2, 6].includes(index)) return "contacted";
-  return "missed";
-}
-
 export async function loadDemoDataAction() {
   const user = await getCurrentUser();
 
@@ -345,30 +338,11 @@ export async function loadDemoDataAction() {
     redirect("/dashboard?demo=error");
   }
 
-  const opportunities: Inserts<"recovery_opportunities">[] = demoCases.map((item, index) => ({
-    booked_at: [0, 3, 8].includes(index) ? hoursAgo(4 + index) : null,
-    call_id: insertedCalls[index]?.id ?? null,
-    clinic_id: clinicId,
-    created_at: hoursAgo(60 - index * 5),
-    estimated_revenue_pence: item.estimatedValue,
-    next_action: [0, 3, 8].includes(index) ? "Confirm attendance and prepare consultation notes." : "Continue recovery follow-up.",
-    patient_id: null,
-    priority_score: Math.max(56, 95 - index * 4),
-    stage: opportunityStage(index),
-    updated_at: hoursAgo(2 + index),
-  }));
-
-  const { error: opportunitiesError } = await admin.from("recovery_opportunities").insert(opportunities);
-
-  if (opportunitiesError) {
-    redirect("/dashboard?demo=error");
-  }
-
   const recoveredCalls = calls.filter((call) => call.status === "recovered").length;
   const bookedLeads = leads.filter((lead) => lead.status === "booked").length;
-  const recoveredRevenue = opportunities
-    .filter((opportunity) => opportunity.stage === "booked")
-    .reduce((total, opportunity) => total + (opportunity.estimated_revenue_pence ?? 0), 0);
+  const recoveredRevenue = leads
+    .filter((lead) => lead.status === "booked")
+    .reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0);
 
   const { error: snapshotError } = await admin.from("dashboard_metric_snapshots").insert({
     booked_leads: bookedLeads,

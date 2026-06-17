@@ -1,11 +1,26 @@
 import type { User } from "@supabase/supabase-js";
-import type { Clinic, RecoveryOpportunity } from "@/types/database";
+import type { Call, Clinic, PatientLead, RecoveryWorkflow } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const demoRecoveryOpportunities: RecoveryOpportunity[] = [
+export type RecoveryOpportunityView = {
+  booked_at: string | null;
+  call_id: string | null;
+  clinic_id: string;
+  created_at: string;
+  estimated_revenue_pence: number;
+  id: string;
+  lost_reason: string | null;
+  next_action: string;
+  patient_id: string | null;
+  priority_score: number;
+  stage: "booked" | "contacted" | "lost" | "missed" | "replied";
+  updated_at: string;
+};
+
+export const demoRecoveryOpportunities: RecoveryOpportunityView[] = [
   {
     id: "77777777-7777-4777-8777-777777777771",
     clinic_id: demoClinic.id,
@@ -19,7 +34,6 @@ export const demoRecoveryOpportunities: RecoveryOpportunity[] = [
     next_action: "Confirm consultation attendance.",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    deleted_at: null,
   },
   {
     id: "77777777-7777-4777-8777-777777777772",
@@ -34,7 +48,6 @@ export const demoRecoveryOpportunities: RecoveryOpportunity[] = [
     next_action: "Follow up with reschedule options.",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    deleted_at: null,
   },
 ];
 
@@ -42,7 +55,7 @@ export function formatCurrency(pence: number) {
   return new Intl.NumberFormat("en-GB", { currency: "GBP", style: "currency" }).format(pence / 100);
 }
 
-export function calculateRecoveryMetrics(opportunities: RecoveryOpportunity[]) {
+export function calculateRecoveryMetrics(opportunities: RecoveryOpportunityView[]) {
   const booked = opportunities.filter((item) => item.stage === "booked");
   const open = opportunities.filter((item) => item.stage !== "booked" && item.stage !== "lost");
   const revenueRecovered = booked.reduce((total, item) => total + item.estimated_revenue_pence, 0);
@@ -61,6 +74,58 @@ export function calculateRecoveryMetrics(opportunities: RecoveryOpportunity[]) {
   };
 }
 
+function stageFromLeadStatus(status: PatientLead["status"]): RecoveryOpportunityView["stage"] {
+  if (status === "booked" || status === "won") return "booked";
+  if (status === "lost" || status === "archived") return "lost";
+  if (status === "qualified") return "replied";
+  if (status === "contacted") return "contacted";
+  return "missed";
+}
+
+function nextActionForLead(lead: PatientLead, workflow?: RecoveryWorkflow, call?: Call) {
+  if (workflow?.next_action_at) {
+    return `Follow up scheduled for ${new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "short",
+    }).format(new Date(workflow.next_action_at))}.`;
+  }
+
+  if (call?.recovery_next_action) return call.recovery_next_action;
+  if (lead.status === "booked" || lead.status === "won") return "Confirm appointment and prepare reception handover.";
+  if (lead.next_follow_up_at) return "Continue lead recovery follow-up.";
+  return "Review enquiry and decide next recovery step.";
+}
+
+function buildOpportunitiesFromLiveRows(input: {
+  calls: Call[];
+  leads: PatientLead[];
+  workflows: RecoveryWorkflow[];
+}): RecoveryOpportunityView[] {
+  return input.leads
+    .map((lead) => {
+      const call = input.calls.find((item) => item.lead_id === lead.id);
+      const workflow = input.workflows.find((item) => item.lead_id === lead.id || (call && item.call_id === call.id));
+
+      return {
+        booked_at: lead.converted_at,
+        call_id: call?.id ?? null,
+        clinic_id: lead.clinic_id,
+        created_at: lead.created_at,
+        estimated_revenue_pence: lead.estimated_value_pence ?? 0,
+        id: lead.id,
+        lost_reason: null,
+        next_action: nextActionForLead(lead, workflow, call),
+        patient_id: lead.patient_id,
+        priority_score: lead.lead_score,
+        stage: stageFromLeadStatus(lead.status),
+        updated_at: lead.updated_at,
+      };
+    })
+    .sort((a, b) => b.priority_score - a.priority_score);
+}
+
 export async function getRecoveryData(user: Pick<User, "email" | "id" | "user_metadata"> | null) {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
@@ -73,16 +138,41 @@ export async function getRecoveryData(user: Pick<User, "email" | "id" | "user_me
 
   if (!membership) return { clinic: null, opportunities: [], source: "supabase" as const };
 
-  const [{ data: clinic }, { data: opportunities }] = await Promise.all([
+  const [{ data: clinic }, { data: leads }, { data: calls }, { data: workflows }] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
     supabase
-      .from("recovery_opportunities")
+      .from("patient_leads")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
       .is("deleted_at", null)
-      .order("priority_score", { ascending: false })
-      .returns<RecoveryOpportunity[]>(),
+      .order("updated_at", { ascending: false })
+      .limit(50)
+      .returns<PatientLead[]>(),
+    supabase
+      .from("calls")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(50)
+      .returns<Call[]>(),
+    supabase
+      .from("recovery_workflows")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(50)
+      .returns<RecoveryWorkflow[]>(),
   ]);
 
-  return { clinic: clinic ?? null, opportunities: opportunities ?? [], source: "supabase" as const };
+  return {
+    clinic: clinic ?? null,
+    opportunities: buildOpportunitiesFromLiveRows({
+      calls: calls ?? [],
+      leads: leads ?? [],
+      workflows: workflows ?? [],
+    }),
+    source: "supabase" as const,
+  };
 }

@@ -1,13 +1,26 @@
 import type { User } from "@supabase/supabase-js";
-import type { Clinic, Patient } from "@/types/database";
+import type { Clinic, PatientLead } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+export type PatientRecord = {
+  id: string;
+  clinic_id: string;
+  created_at: string;
+  email: string | null;
+  full_name: string;
+  phone: string | null;
+  preferred_name: string | null;
+  source: "manual" | "website" | "phone" | "referral" | "import";
+  status: "active" | "lead" | "inactive" | "archived";
+  updated_at: string;
+};
+
 export type PatientFilters = {
   query?: string;
-  status?: Patient["status"] | "all";
+  status?: PatientRecord["status"] | "all";
 };
 
 export type PatientListData = {
@@ -15,7 +28,7 @@ export type PatientListData = {
   emptyMessage: string | null;
   error: string | null;
   filters: Required<PatientFilters>;
-  patients: Patient[];
+  patients: PatientRecord[];
   source: "demo" | "supabase";
 };
 
@@ -26,7 +39,7 @@ function normalizeFilters(filters: PatientFilters): Required<PatientFilters> {
   };
 }
 
-function applyLocalFilters(patients: Patient[], filters: Required<PatientFilters>) {
+function applyLocalFilters(patients: PatientRecord[], filters: Required<PatientFilters>) {
   return patients.filter((patient) => {
     const matchesQuery =
       !filters.query ||
@@ -43,7 +56,7 @@ function buildPatientListData(input: {
   clinic: Clinic | null;
   error?: string | null;
   filters: Required<PatientFilters>;
-  patients: Patient[];
+  patients: PatientRecord[];
   source: "demo" | "supabase";
 }): PatientListData {
   return {
@@ -53,6 +66,49 @@ function buildPatientListData(input: {
     filters: input.filters,
     patients: input.patients,
     source: input.source,
+  };
+}
+
+function leadStatusToPatientStatus(status: PatientLead["status"]): PatientRecord["status"] {
+  if (status === "booked" || status === "won") return "active";
+  if (status === "lost") return "inactive";
+  if (status === "archived") return "archived";
+  return "lead";
+}
+
+function leadSourceToPatientSource(source: PatientLead["source"]): PatientRecord["source"] {
+  if (source === "missed_call") return "phone";
+  if (source === "campaign") return "manual";
+  return source;
+}
+
+function leadName(lead: PatientLead) {
+  const summary = lead.enquiry_summary?.replace(/^\[ClinicFlow demo\]\s*/i, "").trim();
+  if (!summary) return `Lead ${lead.id.slice(0, 8)}`;
+
+  const beforeColon = summary.split(":")[0]?.trim();
+  return beforeColon && beforeColon.length <= 80 ? beforeColon : summary.slice(0, 80);
+}
+
+function leadPreferredName(fullName: string) {
+  const first = fullName.split(/\s+/)[0];
+  return first && !/^lead$/i.test(first) ? first : null;
+}
+
+function leadToPatientRecord(lead: PatientLead): PatientRecord {
+  const fullName = leadName(lead);
+
+  return {
+    clinic_id: lead.clinic_id,
+    created_at: lead.created_at,
+    email: null,
+    full_name: fullName,
+    id: lead.id,
+    phone: null,
+    preferred_name: leadPreferredName(fullName),
+    source: leadSourceToPatientSource(lead.source),
+    status: leadStatusToPatientStatus(lead.status),
+    updated_at: lead.updated_at,
   };
 }
 
@@ -90,15 +146,16 @@ export async function getPatientListData(user: Pick<User, "email" | "id" | "user
   const [{ data: clinic, error: clinicError }, patientsResult] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
     supabase
-      .from("patients")
+      .from("patient_leads")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
-      .returns<Patient[]>(),
+      .returns<PatientLead[]>(),
   ]);
 
-  const filteredPatients = applyLocalFilters(patientsResult.data ?? [], normalizedFilters);
+  const patientRecords = (patientsResult.data ?? []).map(leadToPatientRecord);
+  const filteredPatients = applyLocalFilters(patientRecords, normalizedFilters);
 
   return buildPatientListData({
     clinic: clinic ?? null,

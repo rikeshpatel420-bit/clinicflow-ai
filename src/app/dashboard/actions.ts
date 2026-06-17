@@ -207,10 +207,10 @@ export async function loadDemoDataAction() {
   const now = new Date().toISOString();
 
   const { count: existingDemoCount } = await admin
-    .from("patients")
+    .from("patient_leads")
     .select("id", { count: "exact", head: true })
     .eq("clinic_id", clinicId)
-    .ilike("notes", `%${demoMarker}%`);
+    .ilike("enquiry_summary", `%${demoMarker}%`);
 
   if (existingDemoCount && existingDemoCount > 0) {
     revalidatePath("/dashboard");
@@ -219,38 +219,17 @@ export async function loadDemoDataAction() {
     redirect("/dashboard?demo=already-loaded");
   }
 
-  const patients: Inserts<"patients">[] = demoCases.map((item, index) => ({
-    clinic_id: clinicId,
-    created_at: hoursAgo(72 - index * 5),
-    created_by: user.id,
-    email: item.email,
-    full_name: item.name,
-    notes: `${demoMarker} ${item.notes}`,
-    phone: item.caller,
-    preferred_name: item.preferredName,
-    source: item.source === "campaign" ? "manual" : item.source,
-    status: item.status === "new" ? "lead" : item.status === "booked" ? "active" : "lead",
-    updated_at: hoursAgo(6 + index),
-    updated_by: user.id,
-  }));
-
-  const { data: insertedPatients, error: patientsError } = await admin.from("patients").insert(patients).select("id");
-
-  if (patientsError || !insertedPatients) {
-    redirect("/dashboard?demo=error");
-  }
-
   const leads: Inserts<"patient_leads">[] = demoCases.map((item, index) => ({
     clinic_id: clinicId,
     converted_at: item.status === "booked" ? hoursAgo(5 + index) : null,
     created_at: hoursAgo(70 - index * 5),
     created_by: user.id,
-    enquiry_summary: `${demoMarker} ${item.scenario}: ${item.notes}`,
+    enquiry_summary: `${demoMarker} ${item.name}: ${item.scenario}. ${item.notes} Email: ${item.email}. Phone: ${item.caller}.`,
     estimated_value_pence: item.estimatedValue,
     lead_score: Math.max(54, 96 - index * 4),
     next_follow_up_at: item.status === "booked" ? null : hoursFromNow(4 + index * 3),
     owner_user_id: user.id,
-    patient_id: insertedPatients[index]?.id ?? null,
+    patient_id: null,
     priority: leadPriority(index),
     source: leadSource(item.source),
     status: item.status,
@@ -275,7 +254,7 @@ export async function loadDemoDataAction() {
     duration_seconds: callStatus(index) === "recovered" ? 212 + index * 13 : null,
     ended_at: callStatus(index) === "recovered" ? hoursAgo(63.9 - index * 5) : null,
     lead_id: insertedLeads[index]?.id ?? null,
-    patient_id: insertedPatients[index]?.id ?? null,
+    patient_id: null,
     provider: "manual",
     provider_call_id: `demo-call-${clinicId.slice(0, 8)}-${index + 1}`,
     recovery_next_action:
@@ -318,7 +297,6 @@ export async function loadDemoDataAction() {
     const item = demoCases[index];
     const call = insertedCalls[index];
     const lead = insertedLeads[index];
-    const patient = insertedPatients[index];
     const outbound: Inserts<"sms_events"> = {
       body_preview: `${demoMarker} Hi ${item.preferredName}, sorry we missed your call. Would you like help booking this with the clinic?`,
       call_id: call?.id ?? null,
@@ -327,7 +305,7 @@ export async function loadDemoDataAction() {
       from_number: "+44 20 7946 0820",
       lead_id: lead?.id ?? null,
       occurred_at: hoursAgo(62.5 - index * 5),
-      patient_id: patient?.id ?? null,
+      patient_id: null,
       provider: "manual",
       provider_message_id: `demo-sms-out-${clinicId.slice(0, 8)}-${index + 1}`,
       recovery_workflow_id: workflow.id,
@@ -350,7 +328,7 @@ export async function loadDemoDataAction() {
         from_number: item.caller,
         lead_id: lead?.id ?? null,
         occurred_at: hoursAgo(61.5 - index * 5),
-        patient_id: patient?.id ?? null,
+        patient_id: null,
         provider: "manual",
         provider_message_id: `demo-sms-in-${clinicId.slice(0, 8)}-${index + 1}`,
         recovery_workflow_id: workflow.id,
@@ -374,7 +352,7 @@ export async function loadDemoDataAction() {
     created_at: hoursAgo(60 - index * 5),
     estimated_revenue_pence: item.estimatedValue,
     next_action: [0, 3, 8].includes(index) ? "Confirm attendance and prepare consultation notes." : "Continue recovery follow-up.",
-    patient_id: insertedPatients[index]?.id ?? null,
+    patient_id: null,
     priority_score: Math.max(56, 95 - index * 4),
     stage: opportunityStage(index),
     updated_at: hoursAgo(2 + index),

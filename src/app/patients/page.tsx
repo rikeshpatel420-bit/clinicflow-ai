@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import type { Patient } from "@/types/database";
-import { getPatientListData } from "@/lib/patients/data";
+import { getPatientListData, type PatientRecord } from "@/lib/patients/data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const statusOptions: Array<Patient["status"] | "all"> = ["all", "lead", "active", "inactive", "archived"];
+const statusOptions: Array<PatientRecord["status"] | "all"> = ["all", "lead", "active", "inactive", "archived"];
 
 function label(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -16,7 +15,7 @@ function label(value: string) {
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: Patient["status"] | "all" }>;
+  searchParams: Promise<{ q?: string; status?: PatientRecord["status"] | "all" }>;
 }) {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();

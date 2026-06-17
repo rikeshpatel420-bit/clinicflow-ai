@@ -14,9 +14,23 @@ import { getCurrentUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+function demoStatusMessage(value?: string) {
+  if (value === "loaded") return "Demo data loaded for this clinic. Dashboard, patients, and calls now show realistic sample activity.";
+  if (value === "already-loaded") return "Demo data is already loaded for this clinic.";
+  if (value === "not-authorised") return "Only owner and admin users can load demo data.";
+  if (value === "error") return "Demo data could not be loaded. Please check the server logs and try again.";
+  return undefined;
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ demo?: string }>;
+}) {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
+  const params = await searchParams;
+  let membershipRole: string | null = null;
 
   if (isSupabaseConfigured && !user) {
     redirect("/login");
@@ -24,6 +38,7 @@ export default async function DashboardPage() {
 
   if (isSupabaseConfigured && user) {
     const membership = await getActiveClinicMembershipForUser(user);
+    membershipRole = membership?.role ?? null;
 
     if (!membership) {
       redirect("/onboarding");
@@ -45,7 +60,11 @@ export default async function DashboardPage() {
 
         <section className="min-w-0">
           <MobileDashboardNav />
-          <DashboardHeader clinic={clinic} />
+          <DashboardHeader
+            clinic={clinic}
+            demoStatus={demoStatusMessage(params?.demo)}
+            showDemoDataButton={membershipRole === "owner" || membershipRole === "admin"}
+          />
 
           <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="grid min-w-0 gap-6">

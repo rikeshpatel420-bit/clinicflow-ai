@@ -16,7 +16,7 @@ export default async function CampaignsPage() {
   const user = await getCurrentUser();
   if (isSupabaseConfigured && !user) redirect("/login");
 
-  const data = await getCommunicationsData(user?.id ?? null);
+  const data = await getCommunicationsData(user);
 
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">

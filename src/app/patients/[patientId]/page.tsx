@@ -19,7 +19,7 @@ export default async function PatientDetailPage({
   }
 
   const { patientId } = await params;
-  const data = await getPatientDetailData(user?.id ?? null, patientId);
+  const data = await getPatientDetailData(user, patientId);
   const patient = data.patient;
 
   if (!patient) {

@@ -1,5 +1,7 @@
-import type { Campaign, Clinic, ClinicMember, Conversation, ConversationMessage } from "@/types/database";
+import type { User } from "@supabase/supabase-js";
+import type { Campaign, Clinic, Conversation, ConversationMessage } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -115,26 +117,20 @@ export function getDemoCommunicationsData(): CommunicationsData {
   });
 }
 
-export async function getCommunicationsData(userId: string | null): Promise<CommunicationsData> {
+export async function getCommunicationsData(user: Pick<User, "email" | "id" | "user_metadata"> | null): Promise<CommunicationsData> {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) return getDemoCommunicationsData();
+  if (!isSupabaseConfigured || !user) return getDemoCommunicationsData();
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("clinic_members")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle<ClinicMember>();
+  const membership = await getActiveClinicMembershipForUser(user);
 
-  if (membershipError || !membership) {
+  if (!membership) {
     return buildData({
       campaigns: [],
       clinic: null,
       conversations: [],
-      error: membershipError ? "Could not load clinic membership." : null,
+      error: null,
       messages: [],
       source: "supabase",
     });
@@ -179,8 +175,8 @@ export async function getCommunicationsData(userId: string | null): Promise<Comm
   });
 }
 
-export async function getConversationDetailData(userId: string | null, conversationId: string) {
-  const data = await getCommunicationsData(userId);
+export async function getConversationDetailData(user: Pick<User, "email" | "id" | "user_metadata"> | null, conversationId: string) {
+  const data = await getCommunicationsData(user);
   const conversation = data.conversations.find((item) => item.id === conversationId) ?? null;
   const messages = data.messages.filter((message) => message.conversation_id === conversationId);
 

@@ -1,5 +1,7 @@
-import type { Clinic, ClinicMember, Patient } from "@/types/database";
+import type { User } from "@supabase/supabase-js";
+import type { Clinic, Patient } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -65,33 +67,16 @@ export function getDemoPatientListData(filters: PatientFilters = {}) {
   });
 }
 
-export async function getPatientListData(userId: string | null, filters: PatientFilters = {}) {
+export async function getPatientListData(user: Pick<User, "email" | "id" | "user_metadata"> | null, filters: PatientFilters = {}) {
   const normalizedFilters = normalizeFilters(filters);
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) {
+  if (!isSupabaseConfigured || !user) {
     return getDemoPatientListData(normalizedFilters);
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("clinic_members")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<ClinicMember>();
-
-  if (membershipError) {
-    return buildPatientListData({
-      clinic: null,
-      error: "Could not load clinic membership.",
-      filters: normalizedFilters,
-      patients: [],
-      source: "supabase",
-    });
-  }
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
     return buildPatientListData({
@@ -124,8 +109,8 @@ export async function getPatientListData(userId: string | null, filters: Patient
   });
 }
 
-export async function getPatientDetailData(userId: string | null, patientId: string) {
-  const listData = await getPatientListData(userId);
+export async function getPatientDetailData(user: Pick<User, "email" | "id" | "user_metadata"> | null, patientId: string) {
+  const listData = await getPatientListData(user);
   const patient = listData.patients.find((item) => item.id === patientId) ?? null;
 
   return {

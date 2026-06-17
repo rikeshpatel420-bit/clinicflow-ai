@@ -20,7 +20,7 @@ export default async function CallDetailPage({
   }
 
   const { callId } = await params;
-  const data = await getCallDetailData(user?.id ?? null, callId);
+  const data = await getCallDetailData(user, callId);
   const call = data.call;
 
   if (!call) {

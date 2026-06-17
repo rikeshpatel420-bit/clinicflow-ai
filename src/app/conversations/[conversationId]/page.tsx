@@ -21,8 +21,8 @@ export default async function ConversationPage({
   if (isSupabaseConfigured && !user) redirect("/login");
 
   const { conversationId } = await params;
-  const data = await getConversationDetailData(user?.id ?? null, conversationId);
-  const recovery = await getRecoveryData(user?.id ?? null);
+  const data = await getConversationDetailData(user, conversationId);
+  const recovery = await getRecoveryData(user);
   if (!data.conversation) notFound();
   const recoveryItem = recovery.opportunities.find((item) => item.patient_id === data.conversation?.patient_id);
 

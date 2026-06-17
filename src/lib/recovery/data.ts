@@ -1,5 +1,7 @@
-import type { Clinic, ClinicMember, RecoveryOpportunity } from "@/types/database";
+import type { User } from "@supabase/supabase-js";
+import type { Clinic, RecoveryOpportunity } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -59,21 +61,15 @@ export function calculateRecoveryMetrics(opportunities: RecoveryOpportunity[]) {
   };
 }
 
-export async function getRecoveryData(userId: string | null) {
+export async function getRecoveryData(user: Pick<User, "email" | "id" | "user_metadata"> | null) {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) {
+  if (!isSupabaseConfigured || !user) {
     return { clinic: demoClinic as Clinic | null, opportunities: demoRecoveryOpportunities, source: "demo" as const };
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership } = await supabase
-    .from("clinic_members")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle<ClinicMember>();
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) return { clinic: null, opportunities: [], source: "supabase" as const };
 

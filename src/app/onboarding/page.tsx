@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getActiveClinicMembership } from "@/lib/auth/clinic-workspace";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { OnboardingForm } from "./onboarding-form";
 
@@ -20,7 +20,7 @@ export default async function OnboardingPage() {
     redirect("/login?next=/onboarding");
   }
 
-  const membership = await getActiveClinicMembership(user.id);
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (membership) {
     redirect("/dashboard");

@@ -26,7 +26,7 @@ export default async function PatientsPage({
   }
 
   const params = await searchParams;
-  const data = await getPatientListData(user?.id ?? null, {
+  const data = await getPatientListData(user, {
     query: params.q,
     status: params.status,
   });

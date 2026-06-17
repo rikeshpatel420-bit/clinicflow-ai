@@ -1,13 +1,14 @@
+import type { User } from "@supabase/supabase-js";
 import type {
   AiAuditLog,
   Call,
   Clinic,
-  ClinicUser,
   DashboardMetricSnapshot,
   PatientLead,
   RecoveryWorkflow,
   SmsEvent,
 } from "@/types/database";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -194,26 +195,15 @@ function emptyDashboard(error: string | null = null): ClinicDashboardData {
   };
 }
 
-export async function getClinicDashboardData(userId: string | null): Promise<ClinicDashboardData> {
+export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "user_metadata"> | null): Promise<ClinicDashboardData> {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) {
+  if (!isSupabaseConfigured || !user) {
     return emptyDashboard("Supabase is not configured for live dashboard data.");
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("clinic_users")
-    .select("*")
-    .eq("auth_user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<ClinicUser>();
-
-  if (membershipError) {
-    return emptyDashboard("Could not load clinic membership.");
-  }
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
     return emptyDashboard("No active clinic membership found.");

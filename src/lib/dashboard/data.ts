@@ -1,4 +1,6 @@
-import type { Clinic, ClinicMember, Patient, Profile } from "@/types/database";
+import type { User } from "@supabase/supabase-js";
+import type { Clinic, Patient, Profile } from "@/types/database";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { calculateDashboardKpis, type DashboardMetric } from "./kpis";
@@ -131,32 +133,15 @@ export function getDemoDashboardData() {
   });
 }
 
-export async function getDashboardData(userId: string | null): Promise<DashboardData> {
+export async function getDashboardData(user: Pick<User, "email" | "id" | "user_metadata"> | null): Promise<DashboardData> {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) {
+  if (!isSupabaseConfigured || !user) {
     return getDemoDashboardData();
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("clinic_members")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<ClinicMember>();
-
-  if (membershipError) {
-    return buildDashboardData({
-      clinic: null,
-      error: "Could not load clinic membership.",
-      patients: [],
-      profile: null,
-      source: "supabase",
-    });
-  }
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
     return buildDashboardData({
@@ -174,7 +159,7 @@ export async function getDashboardData(userId: string | null): Promise<Dashboard
         .from("profiles")
         .select("*")
         .eq("clinic_id", membership.clinic_id)
-        .eq("user_id", userId)
+        .eq("user_id", user.id)
         .maybeSingle<Profile>(),
       supabase
         .from("patients")

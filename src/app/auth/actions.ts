@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { getBackendEnv } from "@/lib/backend/env";
-import { getActiveClinicMembership, createClinicWorkspaceForUser } from "@/lib/auth/clinic-workspace";
+import { createClinicWorkspaceForUser, getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -42,7 +42,7 @@ export async function loginAction(formData: FormData) {
   }
 
   const user = data.user;
-  const membership = await getActiveClinicMembership(user.id);
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
     redirect("/onboarding");

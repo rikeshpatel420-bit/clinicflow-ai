@@ -17,7 +17,7 @@ export default async function RecoveryPage() {
   const user = await getCurrentUser();
   if (isSupabaseConfigured && !user) redirect("/login");
 
-  const data = await getRecoveryData(user?.id ?? null);
+  const data = await getRecoveryData(user);
   const metrics = calculateRecoveryMetrics(data.opportunities);
   const rankedByValue = [...metrics.highPriority].sort((a, b) => b.estimated_revenue_pence - a.estimated_revenue_pence);
 

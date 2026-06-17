@@ -16,8 +16,8 @@ export default async function CallsPage() {
     redirect("/login");
   }
 
-  const data = await getCallListData(user?.id ?? null);
-  const recovery = await getRecoveryData(user?.id ?? null);
+  const data = await getCallListData(user);
+  const recovery = await getRecoveryData(user);
 
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">

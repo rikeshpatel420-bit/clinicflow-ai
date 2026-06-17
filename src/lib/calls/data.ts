@@ -1,5 +1,7 @@
-import type { Call, Clinic, ClinicMember } from "@/types/database";
+import type { User } from "@supabase/supabase-js";
+import type { Call, Clinic } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -87,31 +89,15 @@ export function getDemoCallListData() {
   });
 }
 
-export async function getCallListData(userId: string | null): Promise<CallListData> {
+export async function getCallListData(user: Pick<User, "email" | "id" | "user_metadata"> | null): Promise<CallListData> {
   const { isSupabaseConfigured } = getSupabaseEnv();
 
-  if (!isSupabaseConfigured || !userId) {
+  if (!isSupabaseConfigured || !user) {
     return getDemoCallListData();
   }
 
   const supabase = await createSupabaseServerClient();
-  const { data: membership, error: membershipError } = await supabase
-    .from("clinic_members")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<ClinicMember>();
-
-  if (membershipError) {
-    return buildCallListData({
-      calls: [],
-      clinic: null,
-      error: "Could not load clinic membership.",
-      source: "supabase",
-    });
-  }
+  const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
     return buildCallListData({
@@ -141,8 +127,8 @@ export async function getCallListData(userId: string | null): Promise<CallListDa
   });
 }
 
-export async function getCallDetailData(userId: string | null, callId: string) {
-  const listData = await getCallListData(userId);
+export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_metadata"> | null, callId: string) {
+  const listData = await getCallListData(user);
   const call = listData.calls.find((item) => item.id === callId) ?? null;
 
   return {

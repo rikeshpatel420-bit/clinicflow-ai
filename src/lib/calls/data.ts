@@ -6,6 +6,7 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type CallListData = {
+  canAddDemoCall: boolean;
   calls: Call[];
   clinic: Clinic | null;
   emptyMessage: string | null;
@@ -67,12 +68,14 @@ export const demoCalls: Call[] = [
 ];
 
 function buildCallListData(input: {
+  canAddDemoCall?: boolean;
   calls: Call[];
   clinic: Clinic | null;
   error?: string | null;
   source: "demo" | "supabase";
 }): CallListData {
   return {
+    canAddDemoCall: input.canAddDemoCall ?? false,
     calls: input.calls,
     clinic: input.clinic,
     emptyMessage: input.clinic ? null : "No clinic workspace found. Create a clinic before reviewing calls.",
@@ -83,6 +86,7 @@ function buildCallListData(input: {
 
 export function getDemoCallListData() {
   return buildCallListData({
+    canAddDemoCall: false,
     calls: demoCalls,
     clinic: demoClinic,
     source: "demo",
@@ -101,6 +105,7 @@ export async function getCallListData(user: Pick<User, "email" | "id" | "user_me
 
   if (!membership) {
     return buildCallListData({
+      canAddDemoCall: false,
       calls: [],
       clinic: null,
       source: "supabase",
@@ -120,6 +125,7 @@ export async function getCallListData(user: Pick<User, "email" | "id" | "user_me
   ]);
 
   return buildCallListData({
+    canAddDemoCall: ["admin", "owner"].includes(membership.role),
     calls: callsResult.data ?? [],
     clinic: clinic ?? null,
     error: clinicError || callsResult.error ? "Could not load call records." : null,

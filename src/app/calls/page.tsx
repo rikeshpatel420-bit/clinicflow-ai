@@ -1,14 +1,25 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCallListData } from "@/lib/calls/data";
-import { getRecoveryData } from "@/lib/recovery/data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { addDemoCallAction } from "./actions";
 import { CallStatusBadge, RecoveryStatusBadge } from "./status-badge";
 
 export const dynamic = "force-dynamic";
 
-export default async function CallsPage() {
+function demoMessage(value?: string) {
+  if (value === "added") return { text: "Demo missed call added to the clinic call log.", tone: "success" as const };
+  if (value === "error") return { text: "Could not add the demo call. Please try again.", tone: "error" as const };
+  if (value === "not-authorised") return { text: "Only clinic owners and admins can add demo calls.", tone: "error" as const };
+  return null;
+}
+
+export default async function CallsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ demo?: string }>;
+}) {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
 
@@ -17,7 +28,15 @@ export default async function CallsPage() {
   }
 
   const data = await getCallListData(user);
-  const recovery = await getRecoveryData(user);
+  const params = await searchParams;
+  const notice = demoMessage(params?.demo);
+  const summaryCards = [
+    { label: "Total calls", value: data.calls.length },
+    { label: "Missed", value: data.calls.filter((call) => call.status === "missed").length },
+    { label: "Recovered", value: data.calls.filter((call) => call.status === "recovered").length },
+    { label: "Answered", value: data.calls.filter((call) => call.status === "answered").length },
+    { label: "Recovery queued", value: data.calls.filter((call) => call.recovery_status === "queued").length },
+  ];
 
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
@@ -31,6 +50,16 @@ export default async function CallsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            {data.canAddDemoCall ? (
+              <form action={addDemoCallAction}>
+                <button
+                  type="submit"
+                  className="rounded-md bg-[#087968] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#066657] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#087968]"
+                >
+                  Add demo call
+                </button>
+              </form>
+            ) : null}
             <Link
               href="/dashboard"
               className="rounded-md border border-[#cdd8d5] bg-white px-4 py-2.5 text-sm font-semibold hover:border-[#9db2ad]"
@@ -52,13 +81,23 @@ export default async function CallsPage() {
           </section>
         ) : null}
 
+        {notice ? (
+          <section
+            className={`rounded-lg border p-4 text-sm font-medium ${
+              notice.tone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {notice.text}
+          </section>
+        ) : null}
+
         <section className="grid gap-4 md:grid-cols-5">
-          {(["missed", "contacted", "replied", "booked", "lost"] as const).map((stage) => (
-            <article key={stage} className="rounded-lg border border-[#dce6e3] bg-white p-4 shadow-sm">
-              <p className="text-sm font-medium text-[#65736f]">{stage.charAt(0).toUpperCase() + stage.slice(1)}</p>
-              <p className="mt-3 text-3xl font-semibold text-[#10201d]">
-                {recovery.opportunities.filter((item) => item.stage === stage).length}
-              </p>
+          {summaryCards.map((card) => (
+            <article key={card.label} className="rounded-lg border border-[#dce6e3] bg-white p-4 shadow-sm">
+              <p className="text-sm font-medium text-[#65736f]">{card.label}</p>
+              <p className="mt-3 text-3xl font-semibold text-[#10201d]">{card.value}</p>
             </article>
           ))}
         </section>
@@ -127,7 +166,7 @@ export default async function CallsPage() {
               </div>
             ) : (
               <div className="p-6 text-sm leading-6 text-[#65736f]">
-                No calls yet. The call log will populate after call capture is connected in a later Twilio phase.
+                No calls yet. Owners and admins can add a demo call to test the recovery workflow.
               </div>
             )}
           </section>

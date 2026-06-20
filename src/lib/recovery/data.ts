@@ -117,7 +117,7 @@ function buildOpportunitiesFromLiveRows(input: {
         id: lead.id,
         lost_reason: null,
         next_action: nextActionForLead(lead, workflow, call),
-        patient_id: lead.patient_id,
+        patient_id: null,
         priority_score: lead.lead_score,
         stage: stageFromLeadStatus(lead.status),
         updated_at: lead.updated_at,

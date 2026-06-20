@@ -222,7 +222,6 @@ export async function loadDemoDataAction() {
     lead_score: Math.max(54, 96 - index * 4),
     next_follow_up_at: item.status === "booked" ? null : hoursFromNow(4 + index * 3),
     owner_user_id: user.id,
-    patient_id: null,
     priority: leadPriority(index),
     source: leadSource(item.source),
     status: item.status,
@@ -237,7 +236,6 @@ export async function loadDemoDataAction() {
   }
 
   const calls: Inserts<"calls">[] = demoCases.map((item, index) => ({
-    caller_number: item.caller,
     caller_number_hash: `demo-hash-${clinicId.slice(0, 8)}-${index + 1}`,
     caller_number_last4: item.caller.slice(-4),
     clinic_id: clinicId,
@@ -247,7 +245,6 @@ export async function loadDemoDataAction() {
     duration_seconds: callStatus(index) === "recovered" ? 212 + index * 13 : null,
     ended_at: callStatus(index) === "recovered" ? hoursAgo(63.9 - index * 5) : null,
     lead_id: insertedLeads[index]?.id ?? null,
-    patient_id: null,
     provider: "manual",
     provider_call_id: `demo-call-${clinicId.slice(0, 8)}-${index + 1}`,
     recovery_next_action:
@@ -256,7 +253,6 @@ export async function loadDemoDataAction() {
     recovery_updated_at: hoursAgo(3 + index),
     started_at: hoursAgo(65 - index * 5),
     status: callStatus(index),
-    summary: `${demoMarker} ${item.summary}`,
     updated_at: hoursAgo(3 + index),
   }));
 
@@ -295,16 +291,15 @@ export async function loadDemoDataAction() {
       call_id: call?.id ?? null,
       clinic_id: clinicId,
       direction: "outbound",
-      from_number: "+44 20 7946 0820",
+      from_number_hash: `demo-clinic-${clinicId.slice(0, 8)}`,
       lead_id: lead?.id ?? null,
       occurred_at: hoursAgo(62.5 - index * 5),
-      patient_id: null,
       provider: "manual",
       provider_message_id: `demo-sms-out-${clinicId.slice(0, 8)}-${index + 1}`,
       recovery_workflow_id: workflow.id,
       status: "delivered",
-      to_number: item.caller,
-      workflow_id: workflow.id,
+      to_number_hash: `demo-patient-${index + 1}`,
+      to_number_last4: item.caller.slice(-4),
     };
 
     if (![0, 1, 3, 5, 8, 9].includes(index)) {
@@ -318,16 +313,15 @@ export async function loadDemoDataAction() {
         call_id: call?.id ?? null,
         clinic_id: clinicId,
         direction: "inbound",
-        from_number: item.caller,
+        from_number_hash: `demo-patient-${index + 1}`,
         lead_id: lead?.id ?? null,
         occurred_at: hoursAgo(61.5 - index * 5),
-        patient_id: null,
         provider: "manual",
         provider_message_id: `demo-sms-in-${clinicId.slice(0, 8)}-${index + 1}`,
         recovery_workflow_id: workflow.id,
         status: "received",
-        to_number: "+44 20 7946 0820",
-        workflow_id: workflow.id,
+        to_number_hash: `demo-clinic-${clinicId.slice(0, 8)}`,
+        to_number_last4: "0820",
       },
     ];
   });
@@ -351,8 +345,8 @@ export async function loadDemoDataAction() {
     created_at: now,
     missed_calls: calls.length,
     new_leads: leads.length,
-    period_end: now,
-    period_start: hoursAgo(24 * 7),
+    period_end: now.slice(0, 10),
+    period_start: hoursAgo(24 * 7).slice(0, 10),
     recovered_calls: recoveredCalls,
     revenue_recovered_pence: recoveredRevenue,
     sms_sent: smsEvents.filter((event) => event.direction === "outbound").length,

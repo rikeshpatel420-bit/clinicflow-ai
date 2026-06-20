@@ -54,7 +54,7 @@ export default async function CallDetailPage({
           <dl className="mt-8 grid gap-4 sm:grid-cols-2">
             <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
               <dt className="text-xs font-semibold uppercase text-[#65736f]">Caller</dt>
-              <dd className="mt-2 font-medium text-[#10201d]">{call.caller_number ?? "Unknown"}</dd>
+              <dd className="mt-2 font-medium text-[#10201d]">{call.callerLabel}</dd>
             </div>
             <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
               <dt className="text-xs font-semibold uppercase text-[#65736f]">Clinic number</dt>

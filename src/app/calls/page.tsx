@@ -144,9 +144,14 @@ export default async function CallsPage({
                           <Link href={`/calls/${call.id}`} className="font-semibold text-[#10201d] hover:text-[#087968]">
                             {call.direction === "inbound" ? "Inbound call" : "Outbound call"}
                           </Link>
-                          <p className="mt-1 text-xs text-[#65736f]">{call.summary ?? "No summary yet"}</p>
+                          <p className="mt-1 text-xs text-[#65736f]">{call.leadSummary ?? "No linked enquiry summary"}</p>
                         </td>
-                        <td className="px-5 py-4 text-[#65736f]">{call.caller_number ?? "Unknown"}</td>
+                        <td className="px-5 py-4 text-[#65736f]">
+                          <span className="font-medium text-[#394642]">{call.callerLabel}</span>
+                          <span className="mt-1 block text-xs">
+                            {call.caller_number_last4 ? `Ending ${call.caller_number_last4}` : "Number protected"}
+                          </span>
+                        </td>
                         <td className="px-5 py-4">
                           <CallStatusBadge status={call.status} />
                         </td>

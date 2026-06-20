@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
@@ -19,35 +20,48 @@ export async function addDemoCallAction() {
     redirect("/calls?demo=not-authorised");
   }
 
-  const now = new Date().toISOString();
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.from("calls").insert({
-    caller_number: "07123 456789",
-    caller_number_hash: null,
+  const actorUserId = user.id;
+  const { data: lead, error: leadError } = await admin
+    .from("patient_leads")
+    .insert({
+      clinic_id: membership.clinic_id,
+      created_by: actorUserId,
+      enquiry_summary:
+        "Sarah Ahmed: Emergency toothache enquiry. Patient called out of hours and needs callback today. Source: manual_demo. Phone: 07123 456789.",
+      estimated_value_pence: 18000,
+      lead_score: 90,
+      owner_user_id: actorUserId,
+      priority: "urgent",
+      source: "manual",
+      status: "new",
+      updated_by: actorUserId,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (leadError || !lead) {
+    redirect("/calls?demo=error");
+  }
+
+  const callerNumberHash = createHash("sha256").update("07123456789").digest("hex");
+  const { error: callError } = await admin.from("calls").insert({
+    caller_number_hash: callerNumberHash,
     caller_number_last4: "6789",
     clinic_id: membership.clinic_id,
-    created_at: now,
     direction: "inbound",
-    duration_seconds: null,
-    ended_at: null,
-    lead_id: null,
-    patient_id: null,
+    lead_id: lead.id,
     provider: "manual",
-    provider_call_id: `manual_demo-${crypto.randomUUID()}`,
-    recovery_next_action: "Patient called out of hours and needs callback today.",
-    recovery_status: "queued",
-    recovery_updated_at: now,
-    started_at: now,
     status: "missed",
-    summary: "Sarah Ahmed - Emergency toothache enquiry - Source: manual_demo - Estimated value: \u00A3180.",
-    updated_at: now,
   });
 
-  if (error) {
+  if (callError) {
+    await admin.from("patient_leads").delete().eq("id", lead.id).eq("clinic_id", membership.clinic_id);
     redirect("/calls?demo=error");
   }
 
   revalidatePath("/calls");
   revalidatePath("/dashboard");
+  revalidatePath("/patients");
   redirect("/calls?demo=added");
 }

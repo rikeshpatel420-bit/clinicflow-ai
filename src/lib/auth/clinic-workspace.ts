@@ -110,20 +110,23 @@ export async function getActiveClinicMembershipForUser(
     const { data: directMembership } = await query.limit(1).maybeSingle<ClinicUser>();
 
     if (directMembership) {
-      if (!directMembership.auth_user_id || !directMembership.user_id) {
+      const resolvedAuthUserId = user.id;
+      const resolvedAppUserId = appUser?.id ?? directMembership.user_id;
+
+      if (directMembership.auth_user_id !== resolvedAuthUserId || directMembership.user_id !== resolvedAppUserId) {
         await admin
           .from("clinic_users")
           .update({
-            auth_user_id: directMembership.auth_user_id ?? user.id,
-            user_id: directMembership.user_id ?? appUser?.id ?? null,
+            auth_user_id: resolvedAuthUserId,
+            user_id: resolvedAppUserId,
           })
           .eq("id", directMembership.id);
       }
 
       return {
         ...directMembership,
-        auth_user_id: directMembership.auth_user_id ?? user.id,
-        user_id: directMembership.user_id ?? appUser?.id ?? null,
+        auth_user_id: resolvedAuthUserId,
+        user_id: resolvedAppUserId,
       };
     }
 

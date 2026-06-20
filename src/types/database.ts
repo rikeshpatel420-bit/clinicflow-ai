@@ -254,19 +254,16 @@ export type Database = {
           id: string;
           clinic_id: string;
           lead_id: string | null;
-          patient_id: string | null;
           direction: "inbound" | "outbound";
           status: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
           caller_number_hash: string | null;
           caller_number_last4: string | null;
-          caller_number: string | null;
           clinic_number: string | null;
           provider: "manual" | "twilio";
           provider_call_id: string | null;
           started_at: string;
           ended_at: string | null;
           duration_seconds: number | null;
-          summary: string | null;
           recovery_status: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action: string | null;
           recovery_updated_at: string | null;
@@ -278,19 +275,16 @@ export type Database = {
           id?: string;
           clinic_id: string;
           lead_id?: string | null;
-          patient_id?: string | null;
           direction?: "inbound" | "outbound";
           status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
           caller_number_hash?: string | null;
           caller_number_last4?: string | null;
-          caller_number?: string | null;
           clinic_number?: string | null;
           provider?: "manual" | "twilio";
           provider_call_id?: string | null;
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
-          summary?: string | null;
           recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
@@ -302,19 +296,16 @@ export type Database = {
           id?: string;
           clinic_id?: string;
           lead_id?: string | null;
-          patient_id?: string | null;
           direction?: "inbound" | "outbound";
           status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
           caller_number_hash?: string | null;
           caller_number_last4?: string | null;
-          caller_number?: string | null;
           clinic_number?: string | null;
           provider?: "manual" | "twilio";
           provider_call_id?: string | null;
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
-          summary?: string | null;
           recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
@@ -505,7 +496,6 @@ export type Database = {
         Row: {
           id: string;
           clinic_id: string;
-          patient_id: string | null;
           source: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
           status: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
           priority: "low" | "normal" | "high" | "urgent";
@@ -514,6 +504,9 @@ export type Database = {
           lead_score: number;
           enquiry_summary: string | null;
           loss_reason: string | null;
+          gdpr_lawful_basis: string;
+          marketing_consent: boolean;
+          retention_until: string | null;
           next_follow_up_at: string | null;
           converted_at: string | null;
           created_by: string | null;
@@ -525,7 +518,6 @@ export type Database = {
         Insert: {
           id?: string;
           clinic_id: string;
-          patient_id?: string | null;
           source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
           status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
           priority?: "low" | "normal" | "high" | "urgent";
@@ -534,6 +526,9 @@ export type Database = {
           lead_score?: number;
           enquiry_summary?: string | null;
           loss_reason?: string | null;
+          gdpr_lawful_basis?: string;
+          marketing_consent?: boolean;
+          retention_until?: string | null;
           next_follow_up_at?: string | null;
           converted_at?: string | null;
           created_by?: string | null;
@@ -545,7 +540,6 @@ export type Database = {
         Update: {
           id?: string;
           clinic_id?: string;
-          patient_id?: string | null;
           source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
           status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
           priority?: "low" | "normal" | "high" | "urgent";
@@ -554,6 +548,9 @@ export type Database = {
           lead_score?: number;
           enquiry_summary?: string | null;
           loss_reason?: string | null;
+          gdpr_lawful_basis?: string;
+          marketing_consent?: boolean;
+          retention_until?: string | null;
           next_follow_up_at?: string | null;
           converted_at?: string | null;
           created_by?: string | null;
@@ -724,16 +721,13 @@ export type Database = {
           lead_id: string | null;
           call_id: string | null;
           recovery_workflow_id: string | null;
-          provider_account_id: string | null;
-          conversation_id: string | null;
-          patient_id: string | null;
-          workflow_id: string | null;
           provider: "twilio" | "manual";
           provider_message_id: string | null;
           direction: "inbound" | "outbound";
           status: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
-          from_number: string | null;
-          to_number: string | null;
+          from_number_hash: string | null;
+          to_number_hash: string | null;
+          to_number_last4: string | null;
           body_preview: string | null;
           error_code: string | null;
           error_message: string | null;
@@ -746,16 +740,13 @@ export type Database = {
           lead_id?: string | null;
           call_id?: string | null;
           recovery_workflow_id?: string | null;
-          provider_account_id?: string | null;
-          conversation_id?: string | null;
-          patient_id?: string | null;
-          workflow_id?: string | null;
           provider?: "twilio" | "manual";
           provider_message_id?: string | null;
           direction: "inbound" | "outbound";
           status?: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
-          from_number?: string | null;
-          to_number?: string | null;
+          from_number_hash?: string | null;
+          to_number_hash?: string | null;
+          to_number_last4?: string | null;
           body_preview?: string | null;
           error_code?: string | null;
           error_message?: string | null;
@@ -768,16 +759,13 @@ export type Database = {
           lead_id?: string | null;
           call_id?: string | null;
           recovery_workflow_id?: string | null;
-          provider_account_id?: string | null;
-          conversation_id?: string | null;
-          patient_id?: string | null;
-          workflow_id?: string | null;
           provider?: "twilio" | "manual";
           provider_message_id?: string | null;
           direction?: "inbound" | "outbound";
           status?: "queued" | "sent" | "delivered" | "undelivered" | "failed" | "received" | "cancelled";
-          from_number?: string | null;
-          to_number?: string | null;
+          from_number_hash?: string | null;
+          to_number_hash?: string | null;
+          to_number_last4?: string | null;
           body_preview?: string | null;
           error_code?: string | null;
           error_message?: string | null;
@@ -800,6 +788,7 @@ export type Database = {
           revenue_recovered_pence: number;
           calculated_at: string;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
@@ -814,6 +803,7 @@ export type Database = {
           revenue_recovered_pence?: number;
           calculated_at?: string;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
@@ -828,6 +818,7 @@ export type Database = {
           revenue_recovered_pence?: number;
           calculated_at?: string;
           created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };

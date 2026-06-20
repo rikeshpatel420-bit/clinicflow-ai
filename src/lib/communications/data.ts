@@ -116,7 +116,7 @@ function conversationFromSmsEvent(event: SmsEvent): Conversation {
     follow_up_state: event.direction === "inbound" ? "awaiting_reply" : "scheduled",
     id: `sms-thread-${event.id}`,
     last_message_at: event.occurred_at,
-    patient_id: event.patient_id,
+    patient_id: null,
     priority: event.direction === "inbound" ? "urgent" : "normal",
     status: event.direction === "inbound" ? "open" : "pending",
     subject: event.direction === "inbound" ? "Patient SMS reply" : "Recovery SMS sent",

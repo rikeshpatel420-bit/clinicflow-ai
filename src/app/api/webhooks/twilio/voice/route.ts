@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getBackendEnv } from "@/lib/backend/env";
 import { parseTwilioFormData } from "@/lib/twilio/missed-call";
 import { decryptConnectionAuthToken, getTwilioConnectionForVoiceNumber } from "@/lib/twilio/config";
 import { processTwilioCallWebhook } from "@/lib/twilio/recovery";
@@ -23,8 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await processTwilioCallWebhook(payload);
-  const { siteUrl } = getBackendEnv();
-  const statusUrl = `${siteUrl.replace(/\/$/, "")}/api/webhooks/twilio/status`;
+  const statusUrl = `${request.nextUrl.origin.replace(/\/$/, "")}/api/webhooks/twilio/status`;
   const connection = connectionLookup.connection;
   const call = "call" in result ? result.call : null;
 

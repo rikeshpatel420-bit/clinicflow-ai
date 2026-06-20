@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { IntegrationShell } from "@/components/integrations/integration-shell";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getTwilioSetupHealthForClinic } from "@/lib/twilio/health";
@@ -51,7 +52,12 @@ export default async function TwilioIntegrationPage({
 
   const params = await searchParams;
   const message = statusMessage(params?.status);
-  const health = await getTwilioSetupHealthForClinic(membership.clinic_id);
+  const requestHeaders = await headers();
+  const forwardedHost = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const forwardedProto =
+    requestHeaders.get("x-forwarded-proto") ?? (forwardedHost && /localhost|127\.0\.0\.1/.test(forwardedHost) ? "http" : "https");
+  const baseUrl = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null;
+  const health = await getTwilioSetupHealthForClinic(membership.clinic_id, { baseUrl });
   const connection = health.connection;
   const canEdit = membership.role === "owner" || membership.role === "admin";
 

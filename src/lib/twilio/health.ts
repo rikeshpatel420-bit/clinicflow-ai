@@ -33,12 +33,13 @@ export type TwilioSetupHealth = {
   };
 };
 
-function baseUrl() {
-  return getBackendEnv().siteUrl.replace(/\/$/, "");
+function baseUrl(override?: string | null) {
+  const fallback = getBackendEnv().siteUrl;
+  return (override ?? fallback).replace(/\/$/, "");
 }
 
-function buildWebhookUrls() {
-  const origin = baseUrl();
+function buildWebhookUrls(override?: string | null) {
+  const origin = baseUrl(override);
   return {
     sms: `${origin}/api/webhooks/twilio/sms`,
     status: `${origin}/api/webhooks/twilio/status`,
@@ -63,8 +64,9 @@ export function getTwilioEnvHealth() {
   };
 }
 
-export async function getTwilioSetupHealthForClinic(clinicId: string): Promise<TwilioSetupHealth> {
+export async function getTwilioSetupHealthForClinic(clinicId: string, options?: { baseUrl?: string | null }): Promise<TwilioSetupHealth> {
   const env = getTwilioEnvHealth();
+  const resolvedSiteUrlConfigured = Boolean(options?.baseUrl ?? getBackendEnv().siteUrl);
   const connectionResult = await getTwilioConnectionForClinic(clinicId);
   const connection = toTwilioConnectionView(connectionResult.connection);
   const indicators = {
@@ -74,7 +76,8 @@ export async function getTwilioSetupHealthForClinic(clinicId: string): Promise<T
         connection.account_sid &&
         connection.hasAuthToken &&
         connection.voice_number &&
-        env.configEncryptionSecret,
+        env.configEncryptionSecret &&
+        resolvedSiteUrlConfigured,
     ),
     phoneNumberActive: Boolean(connection?.voice_number),
     smsWorking: Boolean(connection && connection.status === "active" && env.smsSenderConfigured),
@@ -84,31 +87,38 @@ export async function getTwilioSetupHealthForClinic(clinicId: string): Promise<T
   return {
     connection,
     connectionError: connectionResult.error,
-    env,
+    env: {
+      ...env,
+      siteUrlConfigured: resolvedSiteUrlConfigured,
+    },
     indicators,
     statuses: {
       accountSid: connection?.account_sid ? "configured" : "missing",
       authToken: connection?.hasAuthToken ? "configured" : "missing",
       phoneNumber: connection?.voice_number ? "configured" : "missing",
-      smsWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: env.siteUrlConfigured }),
-      voiceWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: env.siteUrlConfigured }),
+      smsWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: resolvedSiteUrlConfigured }),
+      voiceWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: resolvedSiteUrlConfigured }),
     },
     tableMissing: connectionResult.tableMissing,
-    webhookUrls: buildWebhookUrls(),
+    webhookUrls: buildWebhookUrls(options?.baseUrl),
   };
 }
 
-export function getTwilioPublicHealth() {
+export function getTwilioPublicHealth(baseUrlOverride?: string | null) {
   const env = getTwilioEnvHealth();
-  const urls = buildWebhookUrls();
-  const connected = env.configEncryptionSecret && env.smsSenderConfigured && env.siteUrlConfigured;
+  const urls = buildWebhookUrls(baseUrlOverride);
+  const resolvedSiteUrlConfigured = Boolean(baseUrlOverride ?? getBackendEnv().siteUrl);
+  const connected = env.configEncryptionSecret && env.smsSenderConfigured && resolvedSiteUrlConfigured;
 
   return {
     connected,
-    env,
+    env: {
+      ...env,
+      siteUrlConfigured: resolvedSiteUrlConfigured,
+    },
     statuses: {
-      smsWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: env.siteUrlConfigured }),
-      voiceWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: env.siteUrlConfigured }),
+      smsWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: resolvedSiteUrlConfigured }),
+      voiceWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: resolvedSiteUrlConfigured }),
     },
     webhookUrls: urls,
   };

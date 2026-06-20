@@ -1,13 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getBackendEnv } from "@/lib/backend/env";
 import { getDeploymentMode } from "@/lib/deployment/readiness";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getTwilioPublicHealth } from "@/lib/twilio/health";
 
-export function GET() {
+export function GET(request: NextRequest) {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const env = getBackendEnv();
-  const twilio = getTwilioPublicHealth();
+  const twilio = getTwilioPublicHealth(request.nextUrl.origin);
 
   return NextResponse.json({
     app: "ClinicFlow AI",

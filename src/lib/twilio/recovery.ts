@@ -359,6 +359,7 @@ async function ensureSmsRecovery(input: {
 function classifyReplyBody(body: string) {
   const normalized = body.trim().toLowerCase();
   if (!normalized) return "replied" as const;
+  // Treat common opt-out phrases as a hard stop so recovery state, calls, and leads stay aligned.
   if (/(?:^|\b)(stop|unsubscribe|opt out|opt-out|cancel|decline|no thanks|not now)(?:\b|$)/.test(normalized)) return "opted_out" as const;
   if (/(?:^|\b)(book|booked|appointment|slot)(?:\b|$)/.test(normalized)) return "booked" as const;
   if (/(?:^|\b)(yes|yes please|call me back|ok|okay|sure|yep|yeah)(?:\b|$)/.test(normalized)) return "recovered" as const;

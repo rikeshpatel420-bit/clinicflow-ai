@@ -46,10 +46,11 @@ export type WorkflowActivityItem = {
 
 type LiveMetricTotals = {
   bookedLeads: number;
+  totalCalls: number;
   missedCalls: number;
   newLeads: number;
   revenueRecoveredPence: number;
-  smsSent: number;
+  recoveredCalls: number;
 };
 
 export type ClinicDashboardData = {
@@ -105,34 +106,35 @@ function callRecoveryState(call: Call, workflow?: RecoveryWorkflow) {
 }
 
 function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: LiveMetricTotals): DashboardMetricCard[] {
+  const totalCalls = liveTotals?.totalCalls ?? 0;
   const missedCalls = snapshot?.missed_calls ?? liveTotals?.missedCalls ?? 0;
   const bookedLeads = snapshot?.booked_leads ?? liveTotals?.bookedLeads ?? 0;
-  const newLeads = snapshot?.new_leads ?? liveTotals?.newLeads ?? 0;
-  const smsSent = snapshot?.sms_sent ?? liveTotals?.smsSent ?? 0;
   const revenueRecoveredPence = snapshot?.revenue_recovered_pence ?? liveTotals?.revenueRecoveredPence ?? 0;
+  const recoveredCalls = snapshot?.recovered_calls ?? liveTotals?.recoveredCalls ?? 0;
+  const recoveryRate = missedCalls > 0 ? Math.round((recoveredCalls / missedCalls) * 100) : 0;
 
   return [
     {
       change: snapshot ? `Period ending ${snapshot.period_end}` : "Live clinic total",
+      label: "Total calls",
+      tone: totalCalls > 0 ? "neutral" : "warning",
+      value: String(totalCalls),
+    },
+    {
+      change: snapshot ? `${missedCalls} missed` : "Live clinic total",
       label: "Missed calls",
       tone: missedCalls > 0 ? "warning" : "neutral",
       value: String(missedCalls),
     },
     {
-      change: snapshot ? `${bookedLeads} booked` : "Live clinic total",
-      label: "New leads",
-      tone: "neutral",
-      value: String(newLeads),
+      change: snapshot ? `${recoveredCalls} recovered` : "Live clinic recovery",
+      label: "Recovery %",
+      tone: recoveryRate > 0 ? "positive" : "neutral",
+      value: `${recoveryRate}%`,
     },
     {
-      change: snapshot ? "Logged delivery events" : "Live outbound events",
-      label: "SMS sent",
-      tone: "neutral",
-      value: String(smsSent),
-    },
-    {
-      change: snapshot ? "Recovered revenue" : "Live recovered revenue",
-      label: "Recovered",
+      change: snapshot ? `${bookedLeads} booked` : "Live recovered revenue",
+      label: "Recovered revenue",
       tone: "positive",
       value: formatPounds(revenueRecoveredPence),
     },
@@ -140,7 +142,7 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
 }
 
 function buildMissedCallRows(calls: Call[], workflows: RecoveryWorkflow[], smsEvents: SmsEvent[]): MissedCallRow[] {
-  return calls.map((call) => {
+  return calls.filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).map((call) => {
     const workflow = workflows.find((item) => item.call_id === call.id);
     const smsEvent = workflow ? smsEvents.find((event) => event.recovery_workflow_id === workflow.id) : null;
 
@@ -177,12 +179,12 @@ function buildLeadColumns(leads: PatientLead[]): LeadPipelineColumn[] {
 function buildActivity(workflows: RecoveryWorkflow[]): WorkflowActivityItem[] {
   return workflows
     .map((workflow) => ({
-    description: `${formatLabel(workflow.channel)} workflow step ${workflow.current_step} of ${workflow.max_steps}.`,
-    id: workflow.id,
-    state: formatLabel(workflow.state),
-    timestamp: formatDateTime(workflow.updated_at),
-    title: `Workflow ${shortId(workflow.id)}`,
-  }))
+      description: `${formatLabel(workflow.channel)} workflow step ${workflow.current_step} of ${workflow.max_steps}.`,
+      id: workflow.id,
+      state: formatLabel(workflow.state),
+      timestamp: formatDateTime(workflow.updated_at),
+      title: `Workflow ${shortId(workflow.id)}`,
+    }))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 8);
 }
@@ -216,6 +218,9 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   const [
     { data: clinic, error: clinicError },
     { data: snapshot },
+    { count: totalCallsCount, error: totalCallsError },
+    { count: missedCallsCount, error: missedCallsCountError },
+    { count: recoveredCallsCount, error: recoveredCallsCountError },
     { data: calls, error: callsError },
     { data: smsEvents, error: smsError },
     { data: leads, error: leadsError },
@@ -229,14 +234,26 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .order("period_end", { ascending: false })
       .limit(1)
       .maybeSingle<DashboardMetricSnapshot>(),
+    supabase.from("calls").select("id", { count: "exact", head: true }).eq("clinic_id", membership.clinic_id).is("deleted_at", null),
+    supabase
+      .from("calls")
+      .select("id", { count: "exact", head: true })
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .in("status", ["missed", "voicemail", "abandoned"]),
+    supabase
+      .from("calls")
+      .select("id", { count: "exact", head: true })
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .eq("status", "recovered"),
     supabase
       .from("calls")
       .select("*")
       .eq("clinic_id", membership.clinic_id)
-      .eq("status", "missed")
       .is("deleted_at", null)
       .order("started_at", { ascending: false })
-      .limit(8)
+      .limit(50)
       .returns<Call[]>(),
     supabase
       .from("sms_events")
@@ -264,15 +281,19 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .returns<RecoveryWorkflow[]>(),
   ]);
 
-  const loadError = clinicError || callsError || smsError || leadsError || workflowsError;
+  const loadError = clinicError || totalCallsError || missedCallsCountError || recoveredCallsCountError || callsError || smsError || leadsError || workflowsError;
+  const totalCalls = totalCallsCount ?? (calls ?? []).length;
+  const missedCalls = missedCallsCount ?? (calls ?? []).filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).length;
+  const recoveredCalls = recoveredCallsCount ?? (calls ?? []).filter((call) => call.status === "recovered").length;
   const liveTotals: LiveMetricTotals = {
     bookedLeads: (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length,
-    missedCalls: (calls ?? []).length,
+    missedCalls,
+    recoveredCalls,
+    totalCalls,
     newLeads: (leads ?? []).length,
     revenueRecoveredPence: (leads ?? [])
       .filter((lead) => lead.status === "booked" || lead.status === "won")
       .reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0),
-    smsSent: (smsEvents ?? []).filter((event) => event.direction === "outbound").length,
   };
 
   return {

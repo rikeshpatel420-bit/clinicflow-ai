@@ -3,6 +3,7 @@ import { recoveryStatusLabels, recoveryToneByStatus } from "@/lib/calls/recovery
 
 const toneByStatus: Record<Call["status"], string> = {
   answered: "bg-blue-50 text-blue-700",
+  abandoned: "bg-slate-100 text-slate-700",
   failed: "bg-red-50 text-red-700",
   missed: "bg-amber-50 text-amber-800",
   queued: "bg-slate-100 text-slate-700",

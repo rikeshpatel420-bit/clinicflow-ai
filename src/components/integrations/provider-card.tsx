@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { IntegrationStatusBadge } from "@/components/integrations/health-badge";
 import type { IntegrationConnection, ProviderDefinition } from "@/lib/integrations/types";
 
@@ -29,6 +30,13 @@ export function ProviderCard({
         <div className="mt-5 rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4 text-sm">
           <p className="font-semibold text-[#10201d]">{connection.externalAccountLabel}</p>
           <p className="mt-1 text-[#65736f]">Health {connection.healthScore}% / Last sync {connection.lastSyncAt}</p>
+        </div>
+      ) : null}
+      {provider.key === "twilio" ? (
+        <div className="mt-5">
+          <Link href="/integrations/twilio" className="inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white">
+            Configure Twilio
+          </Link>
         </div>
       ) : null}
     </article>

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { parseTwilioFormData } from "@/lib/twilio/missed-call";
 import { decryptConnectionAuthToken, getTwilioConnectionForVoiceNumber } from "@/lib/twilio/config";
-import { processTwilioCallWebhook } from "@/lib/twilio/recovery";
+import { processTwilioSmsWebhook } from "@/lib/twilio/recovery";
 import { verifyTwilioSignature } from "@/lib/twilio/verification";
 
 export async function POST(request: NextRequest) {
@@ -17,21 +17,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason: verification.reason }, { status: 401 });
   }
 
-  const result = await processTwilioCallWebhook(payload);
-  const call = "call" in result ? result.call : null;
+  const result = await processTwilioSmsWebhook(payload);
 
-  if (!result.ok || !call) {
+  if (!result.ok) {
     return NextResponse.json(
-      { ok: false, reason: result.error ?? "Twilio status webhook failed." },
+      { ok: false, reason: result.error ?? "Twilio SMS webhook failed." },
       { status: verification.isTestMode ? 200 : 500 },
     );
   }
 
   return NextResponse.json(
     {
-      callStatus: call.status,
       ok: true,
-      recoveryStatus: call.recovery_status,
+      replyState: result.replyState,
     },
     {
       headers: {

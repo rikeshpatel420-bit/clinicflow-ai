@@ -255,7 +255,7 @@ export type Database = {
           clinic_id: string;
           lead_id: string | null;
           direction: "inbound" | "outbound";
-          status: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          status: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed" | "abandoned";
           caller_number_hash: string | null;
           caller_number_last4: string | null;
           clinic_number: string | null;
@@ -264,7 +264,19 @@ export type Database = {
           started_at: string;
           ended_at: string | null;
           duration_seconds: number | null;
-          recovery_status: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status:
+            | "not_started"
+            | "queued"
+            | "sms_draft"
+            | "sms_sent"
+            | "drafted"
+            | "awaiting_reply"
+            | "replied"
+            | "booked"
+            | "lost"
+            | "recovered"
+            | "closed"
+            | "failed";
           recovery_next_action: string | null;
           recovery_updated_at: string | null;
           created_at: string;
@@ -276,7 +288,7 @@ export type Database = {
           clinic_id: string;
           lead_id?: string | null;
           direction?: "inbound" | "outbound";
-          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed" | "abandoned";
           caller_number_hash?: string | null;
           caller_number_last4?: string | null;
           clinic_number?: string | null;
@@ -285,7 +297,19 @@ export type Database = {
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
-          recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status?:
+            | "not_started"
+            | "queued"
+            | "sms_draft"
+            | "sms_sent"
+            | "drafted"
+            | "awaiting_reply"
+            | "replied"
+            | "booked"
+            | "lost"
+            | "recovered"
+            | "closed"
+            | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
           created_at?: string;
@@ -297,7 +321,7 @@ export type Database = {
           clinic_id?: string;
           lead_id?: string | null;
           direction?: "inbound" | "outbound";
-          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed";
+          status?: "missed" | "answered" | "recovered" | "voicemail" | "queued" | "failed" | "abandoned";
           caller_number_hash?: string | null;
           caller_number_last4?: string | null;
           clinic_number?: string | null;
@@ -306,7 +330,19 @@ export type Database = {
           started_at?: string;
           ended_at?: string | null;
           duration_seconds?: number | null;
-          recovery_status?: "not_started" | "queued" | "sms_draft" | "drafted" | "awaiting_reply" | "recovered" | "closed" | "failed";
+          recovery_status?:
+            | "not_started"
+            | "queued"
+            | "sms_draft"
+            | "sms_sent"
+            | "drafted"
+            | "awaiting_reply"
+            | "replied"
+            | "booked"
+            | "lost"
+            | "recovered"
+            | "closed"
+            | "failed";
           recovery_next_action?: string | null;
           recovery_updated_at?: string | null;
           created_at?: string;
@@ -570,11 +606,14 @@ export type Database = {
           lead_id: string | null;
           state:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel: "sms" | "phone" | "email" | "whatsapp";
@@ -595,11 +634,14 @@ export type Database = {
           lead_id?: string | null;
           state?:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel?: "sms" | "phone" | "email" | "whatsapp";
@@ -620,11 +662,14 @@ export type Database = {
           lead_id?: string | null;
           state?:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel?: "sms" | "phone" | "email" | "whatsapp";
@@ -647,11 +692,14 @@ export type Database = {
           lead_id: string | null;
           state:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel: "sms" | "phone" | "email" | "whatsapp";
@@ -671,11 +719,14 @@ export type Database = {
           lead_id?: string | null;
           state?:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel?: "sms" | "phone" | "email" | "whatsapp";
@@ -695,11 +746,14 @@ export type Database = {
           lead_id?: string | null;
           state?:
             | "queued"
+            | "sms_sent"
+            | "replied"
+            | "booked"
+            | "lost"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
             | "awaiting_patient_reply"
-            | "booked"
             | "closed"
             | "failed";
           channel?: "sms" | "phone" | "email" | "whatsapp";
@@ -817,6 +871,60 @@ export type Database = {
           sms_sent?: number;
           revenue_recovered_pence?: number;
           calculated_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      twilio_connections: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          account_sid: string;
+          voice_number: string;
+          forward_to_number: string;
+          auth_token_ciphertext: string;
+          auth_token_iv: string;
+          auth_token_tag: string;
+          status: "inactive" | "active" | "error";
+          last_validated_at: string | null;
+          last_error: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          account_sid: string;
+          voice_number: string;
+          forward_to_number: string;
+          auth_token_ciphertext: string;
+          auth_token_iv: string;
+          auth_token_tag: string;
+          status?: "inactive" | "active" | "error";
+          last_validated_at?: string | null;
+          last_error?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          account_sid?: string;
+          voice_number?: string;
+          forward_to_number?: string;
+          auth_token_ciphertext?: string;
+          auth_token_iv?: string;
+          auth_token_tag?: string;
+          status?: "inactive" | "active" | "error";
+          last_validated_at?: string | null;
+          last_error?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -964,5 +1072,6 @@ export type RecoveryWorkflow = Tables<"recovery_workflows">;
 export type MissedCallRecoveryWorkflow = Tables<"missed_call_recovery_workflows">;
 export type SmsEvent = Tables<"sms_events">;
 export type DashboardMetricSnapshot = Tables<"dashboard_metric_snapshots">;
+export type TwilioConnection = Tables<"twilio_connections">;
 export type AiAuditLog = Tables<"ai_audit_logs">;
 export type AuditEvent = Tables<"audit_events">;

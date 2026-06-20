@@ -37,7 +37,7 @@ export function DashboardHeader({
                 type="submit"
                 className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 dark:bg-teal-400 dark:text-slate-950 dark:hover:bg-teal-300"
               >
-                Load demo data
+                Load demo clinic data
               </button>
             </form>
           ) : null}

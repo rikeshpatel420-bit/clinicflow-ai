@@ -44,6 +44,14 @@ export type WorkflowActivityItem = {
   title: string;
 };
 
+type LiveMetricTotals = {
+  bookedLeads: number;
+  missedCalls: number;
+  newLeads: number;
+  revenueRecoveredPence: number;
+  smsSent: number;
+};
+
 export type ClinicDashboardData = {
   activity: WorkflowActivityItem[];
   clinic: DashboardClinicContext | null;
@@ -96,31 +104,37 @@ function callRecoveryState(call: Call, workflow?: RecoveryWorkflow) {
   return formatLabel(call.recovery_status);
 }
 
-function buildMetrics(snapshot: DashboardMetricSnapshot | null): DashboardMetricCard[] {
+function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: LiveMetricTotals): DashboardMetricCard[] {
+  const missedCalls = snapshot?.missed_calls ?? liveTotals?.missedCalls ?? 0;
+  const bookedLeads = snapshot?.booked_leads ?? liveTotals?.bookedLeads ?? 0;
+  const newLeads = snapshot?.new_leads ?? liveTotals?.newLeads ?? 0;
+  const smsSent = snapshot?.sms_sent ?? liveTotals?.smsSent ?? 0;
+  const revenueRecoveredPence = snapshot?.revenue_recovered_pence ?? liveTotals?.revenueRecoveredPence ?? 0;
+
   return [
     {
-      change: snapshot ? `Period ending ${snapshot.period_end}` : "No snapshot yet",
+      change: snapshot ? `Period ending ${snapshot.period_end}` : "Live clinic total",
       label: "Missed calls",
-      tone: snapshot && snapshot.missed_calls > 0 ? "warning" : "neutral",
-      value: String(snapshot?.missed_calls ?? 0),
+      tone: missedCalls > 0 ? "warning" : "neutral",
+      value: String(missedCalls),
     },
     {
-      change: snapshot ? `${snapshot.booked_leads} booked` : "No leads yet",
+      change: snapshot ? `${bookedLeads} booked` : "Live clinic total",
       label: "New leads",
       tone: "neutral",
-      value: String(snapshot?.new_leads ?? 0),
+      value: String(newLeads),
     },
     {
-      change: snapshot ? "Logged delivery events" : "No SMS events yet",
+      change: snapshot ? "Logged delivery events" : "Live outbound events",
       label: "SMS sent",
       tone: "neutral",
-      value: String(snapshot?.sms_sent ?? 0),
+      value: String(smsSent),
     },
     {
-      change: snapshot ? "Recovered revenue" : "No recovery yet",
+      change: snapshot ? "Recovered revenue" : "Live recovered revenue",
       label: "Recovered",
       tone: "positive",
-      value: formatPounds(snapshot?.revenue_recovered_pence ?? 0),
+      value: formatPounds(revenueRecoveredPence),
     },
   ];
 }
@@ -251,13 +265,22 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   ]);
 
   const loadError = clinicError || callsError || smsError || leadsError || workflowsError;
+  const liveTotals: LiveMetricTotals = {
+    bookedLeads: (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length,
+    missedCalls: (calls ?? []).length,
+    newLeads: (leads ?? []).length,
+    revenueRecoveredPence: (leads ?? [])
+      .filter((lead) => lead.status === "booked" || lead.status === "won")
+      .reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0),
+    smsSent: (smsEvents ?? []).filter((event) => event.direction === "outbound").length,
+  };
 
   return {
     activity: buildActivity(workflows ?? []),
     clinic: clinic ?? null,
     error: loadError ? "Some dashboard data could not be loaded." : null,
     leadColumns: buildLeadColumns(leads ?? []),
-    metrics: buildMetrics(snapshot ?? null),
+    metrics: buildMetrics(snapshot ?? null, liveTotals),
     missedCalls: buildMissedCallRows(calls ?? [], workflows ?? [], smsEvents ?? []),
     snapshot: snapshot ?? null,
   };

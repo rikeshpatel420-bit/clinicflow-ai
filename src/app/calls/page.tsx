@@ -9,7 +9,8 @@ import { CallStatusBadge, RecoveryStatusBadge } from "./status-badge";
 export const dynamic = "force-dynamic";
 
 function demoMessage(value?: string) {
-  if (value === "added") return { text: "Demo missed call added to the clinic call log.", tone: "success" as const };
+  if (value === "added")
+    return { text: "Demo missed call, recovery workflow, and SMS activity were added to the clinic call log.", tone: "success" as const };
   if (value === "error") return { text: "Could not add the demo call. Please try again.", tone: "error" as const };
   if (value === "not-authorised") return { text: "Only clinic owners and admins can add demo calls.", tone: "error" as const };
   return null;

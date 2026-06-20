@@ -15,8 +15,8 @@ import { getCurrentUser } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 function demoStatusMessage(value?: string) {
-  if (value === "loaded") return "Demo data loaded for this clinic. Dashboard, patients, and calls now show realistic sample activity.";
-  if (value === "already-loaded") return "Demo data is already loaded for this clinic.";
+  if (value === "loaded") return "Demo clinic data loaded for this clinic. Dashboard, patients, and calls now show realistic sample activity.";
+  if (value === "already-loaded") return "Demo clinic data is already loaded for this clinic.";
   if (value === "not-authorised") return "Only owner and admin users can load demo data.";
   if (value === "error") return "Demo data could not be loaded. Please check the server logs and try again.";
   return undefined;
@@ -85,8 +85,8 @@ export default async function DashboardPage({
                     Low-cost operational snapshot
                   </h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    This panel reads from `dashboard_metric_snapshots`. If no scheduled aggregation has run yet, the cards show zero
-                    values and the operational tables below show empty states.
+                    This panel reads from `dashboard_metric_snapshots` when a snapshot exists, and falls back to live clinic totals so
+                    the cards stay meaningful during demo setup.
                   </p>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900">

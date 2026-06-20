@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DashboardMetricCardView } from "@/components/dashboard/metric-card";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
+import { TwilioStatusStrip } from "@/components/dashboard/twilio-status-strip";
 import { LeadPipeline } from "@/components/dashboard/lead-pipeline";
 import { MissedCallsTable } from "@/components/dashboard/missed-calls-table";
 import { MobileDashboardNav } from "@/components/dashboard/mobile-dashboard-nav";
@@ -10,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getClinicDashboardData } from "@/lib/dashboard/live-data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import { getTwilioSetupHealthForClinic, type TwilioSetupHealth } from "@/lib/twilio/health";
 import { getCurrentUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,8 @@ export default async function DashboardPage({
   const user = await getCurrentUser();
   const params = await searchParams;
   let membershipRole: string | null = null;
+  let membershipClinicId: string | null = null;
+  let twilioHealth: TwilioSetupHealth | null = null;
 
   if (isSupabaseConfigured && !user) {
     redirect("/login");
@@ -39,6 +43,7 @@ export default async function DashboardPage({
   if (isSupabaseConfigured && user) {
     const membership = await getActiveClinicMembershipForUser(user);
     membershipRole = membership?.role ?? null;
+    membershipClinicId = membership?.clinic_id ?? null;
 
     if (!membership) {
       redirect("/onboarding");
@@ -46,6 +51,9 @@ export default async function DashboardPage({
   }
 
   const dashboard = await getClinicDashboardData(user);
+  if (membershipClinicId) {
+    twilioHealth = await getTwilioSetupHealthForClinic(membershipClinicId);
+  }
   const clinic = dashboard.clinic ?? {
     id: "unconfigured",
     name: "Clinic dashboard",
@@ -65,6 +73,8 @@ export default async function DashboardPage({
             demoStatus={demoStatusMessage(params?.demo)}
             showDemoDataButton={membershipRole === "owner" || membershipRole === "admin"}
           />
+
+          {twilioHealth ? <TwilioStatusStrip health={twilioHealth} /> : null}
 
           <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="grid min-w-0 gap-6">

@@ -1,6 +1,6 @@
 import { getBackendEnv } from "@/lib/backend/env";
-import { decryptConnectionAuthToken } from "./config";
 import type { TwilioConnection } from "@/types/database";
+import { decryptConnectionAuthToken } from "./config";
 
 export type SmsRecoveryDraft = {
   body: string;

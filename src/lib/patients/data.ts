@@ -70,8 +70,8 @@ function buildPatientListData(input: {
 }
 
 function leadStatusToPatientStatus(status: PatientLead["status"]): PatientRecord["status"] {
-  if (status === "booked" || status === "won") return "active";
-  if (status === "lost") return "inactive";
+  if (status === "booked" || status === "won" || status === "recovered") return "active";
+  if (status === "lost" || status === "opted_out") return "inactive";
   if (status === "archived") return "archived";
   return "lead";
 }

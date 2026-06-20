@@ -72,7 +72,7 @@ export default async function DashboardPage({
                 <EmptyState title="Dashboard data unavailable" message={dashboard.error} actionHref="/onboarding" actionLabel="Open onboarding" />
               ) : null}
 
-              <section aria-label="Overview metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <section aria-label="Overview metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {dashboard.metrics.map((metric) => (
                   <DashboardMetricCardView key={metric.label} metric={metric} />
                 ))}

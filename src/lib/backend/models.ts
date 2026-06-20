@@ -1,6 +1,6 @@
 export type ClinicRole = "owner" | "admin" | "manager" | "receptionist" | "clinician" | "member";
 
-export type PatientLeadStatus = "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+export type PatientLeadStatus = "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "recovered" | "opted_out" | "archived";
 
 export type MissedCallWorkflowState =
   | "queued"
@@ -9,6 +9,8 @@ export type MissedCallWorkflowState =
   | "message_queued"
   | "awaiting_patient_reply"
   | "booked"
+  | "recovered"
+  | "opted_out"
   | "closed"
   | "failed";
 

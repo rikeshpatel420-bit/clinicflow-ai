@@ -76,8 +76,8 @@ export function calculateRecoveryMetrics(opportunities: RecoveryOpportunityView[
 
 function stageFromLeadStatus(status: PatientLead["status"]): RecoveryOpportunityView["stage"] {
   if (status === "booked" || status === "won") return "booked";
-  if (status === "lost" || status === "archived") return "lost";
-  if (status === "qualified") return "replied";
+  if (status === "lost" || status === "opted_out" || status === "archived") return "lost";
+  if (status === "qualified" || status === "recovered") return "replied";
   if (status === "contacted") return "contacted";
   return "missed";
 }
@@ -94,6 +94,8 @@ function nextActionForLead(lead: PatientLead, workflow?: RecoveryWorkflow, call?
 
   if (call?.recovery_next_action) return call.recovery_next_action;
   if (lead.status === "booked" || lead.status === "won") return "Confirm appointment and prepare reception handover.";
+  if (lead.status === "recovered") return "Call back and confirm the next step.";
+  if (lead.status === "opted_out") return "Record opt-out and close the recovery thread.";
   if (lead.next_follow_up_at) return "Continue lead recovery follow-up.";
   return "Review enquiry and decide next recovery step.";
 }

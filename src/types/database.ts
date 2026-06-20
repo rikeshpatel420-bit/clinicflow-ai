@@ -533,7 +533,7 @@ export type Database = {
           id: string;
           clinic_id: string;
           source: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
-          status: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          status: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "recovered" | "opted_out" | "archived";
           priority: "low" | "normal" | "high" | "urgent";
           owner_user_id: string | null;
           estimated_value_pence: number;
@@ -555,7 +555,7 @@ export type Database = {
           id?: string;
           clinic_id: string;
           source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
-          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "recovered" | "opted_out" | "archived";
           priority?: "low" | "normal" | "high" | "urgent";
           owner_user_id?: string | null;
           estimated_value_pence?: number;
@@ -577,7 +577,7 @@ export type Database = {
           id?: string;
           clinic_id?: string;
           source?: "manual" | "website" | "phone" | "missed_call" | "referral" | "campaign" | "import";
-          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "archived";
+          status?: "new" | "contacted" | "qualified" | "booked" | "won" | "lost" | "recovered" | "opted_out" | "archived";
           priority?: "low" | "normal" | "high" | "urgent";
           owner_user_id?: string | null;
           estimated_value_pence?: number;
@@ -610,6 +610,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
@@ -638,6 +640,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
@@ -666,6 +670,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
@@ -696,6 +702,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
@@ -723,6 +731,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"
@@ -750,6 +760,8 @@ export type Database = {
             | "replied"
             | "booked"
             | "lost"
+            | "recovered"
+            | "opted_out"
             | "drafted"
             | "awaiting_staff_approval"
             | "message_queued"

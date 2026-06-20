@@ -5,15 +5,18 @@ import { getBackendEnv } from "@/lib/backend/env";
 import { getTwilioConnectionForClinic, toTwilioConnectionView } from "@/lib/twilio/config";
 import { maskAccountSid } from "@/lib/twilio/crypto";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { deleteTwilioConfigAction, saveTwilioConfigAction } from "./actions";
+import { deleteTwilioConfigAction, saveTwilioConfigAction, testTwilioConfigAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 function statusMessage(value?: string) {
   if (value === "saved") return { tone: "success" as const, text: "Twilio settings saved securely for this clinic." };
   if (value === "deleted") return { tone: "success" as const, text: "Twilio settings removed for this clinic." };
+  if (value === "tested") return { tone: "success" as const, text: "Twilio connection verified successfully." };
   if (value === "missing-fields") return { tone: "error" as const, text: "Please complete the Twilio SID, auth token, voice number, and forwarding number." };
   if (value === "not-authorised") return { tone: "error" as const, text: "Only clinic owners and admins can manage Twilio settings." };
+  if (value === "no-connection") return { tone: "error" as const, text: "Save Twilio settings before running a connection test." };
+  if (value === "test-error") return { tone: "error" as const, text: "Twilio connection test failed. Please check the SID, token, and voice number." };
   if (value === "error") return { tone: "error" as const, text: "Twilio settings could not be saved. Please check the server logs and try again." };
   return null;
 }
@@ -144,6 +147,14 @@ export default async function TwilioIntegrationPage({
                 className="rounded-md bg-[#087968] px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#066657] disabled:cursor-not-allowed disabled:bg-[#9fb8b2]"
               >
                 Save Twilio settings
+              </button>
+              <button
+                formAction={testTwilioConfigAction}
+                type="submit"
+                disabled={!canEdit || !connection}
+                className="rounded-md border border-[#cdd8d5] bg-white px-5 py-3 text-sm font-semibold text-[#10201d] shadow-sm hover:border-[#9db2ad] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Test connection
               </button>
             </div>
             {!canEdit ? <p className="text-sm text-[#65736f]">Only owners and admins can edit Twilio configuration.</p> : null}

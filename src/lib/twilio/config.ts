@@ -156,3 +156,28 @@ export function decryptConnectionAuthToken(connection: TwilioConnection) {
     secret,
   );
 }
+
+export async function verifyTwilioConnection(connection: TwilioConnection) {
+  const authToken = decryptConnectionAuthToken(connection);
+  if (!authToken) {
+    return { error: "Missing encrypted Twilio auth token." };
+  }
+
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${connection.account_sid}.json`, {
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${connection.account_sid}:${authToken}`).toString("base64")}`,
+    },
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    return {
+      error: body || `Twilio connection test failed with status ${response.status}.`,
+    };
+  }
+
+  return {
+    error: null,
+  };
+}

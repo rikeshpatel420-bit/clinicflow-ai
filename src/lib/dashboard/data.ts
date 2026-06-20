@@ -111,9 +111,9 @@ function patientSourceFromLead(source: PatientLead["source"]): Patient["source"]
 }
 
 function patientStatusFromLead(status: PatientLead["status"]): Patient["status"] {
-  if (status === "booked" || status === "won") return "active";
+  if (status === "booked" || status === "won" || status === "recovered") return "active";
   if (status === "archived") return "archived";
-  if (status === "lost") return "inactive";
+  if (status === "lost" || status === "opted_out") return "inactive";
   return "lead";
 }
 

@@ -46,6 +46,9 @@ export type WorkflowActivityItem = {
 
 type LiveMetricTotals = {
   bookedLeads: number;
+  recoveredLeads: number;
+  smsReplied: number;
+  smsSent: number;
   totalCalls: number;
   missedCalls: number;
   newLeads: number;
@@ -63,7 +66,7 @@ export type ClinicDashboardData = {
   snapshot: DashboardMetricSnapshot | null;
 };
 
-const leadStatuses: Array<PatientLead["status"]> = ["new", "contacted", "qualified", "booked"];
+const leadStatuses: Array<PatientLead["status"]> = ["new", "contacted", "qualified", "recovered", "booked", "lost", "opted_out"];
 
 function formatDateTime(value: string | null) {
   if (!value) {
@@ -76,14 +79,6 @@ function formatDateTime(value: string | null) {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
-}
-
-function formatPounds(pence: number) {
-  return new Intl.NumberFormat("en-GB", {
-    currency: "GBP",
-    maximumFractionDigits: 0,
-    style: "currency",
-  }).format(pence / 100);
 }
 
 function formatLabel(value: string) {
@@ -108,10 +103,10 @@ function callRecoveryState(call: Call, workflow?: RecoveryWorkflow) {
 function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: LiveMetricTotals): DashboardMetricCard[] {
   const totalCalls = liveTotals?.totalCalls ?? 0;
   const missedCalls = snapshot?.missed_calls ?? liveTotals?.missedCalls ?? 0;
-  const bookedLeads = snapshot?.booked_leads ?? liveTotals?.bookedLeads ?? 0;
-  const revenueRecoveredPence = snapshot?.revenue_recovered_pence ?? liveTotals?.revenueRecoveredPence ?? 0;
-  const recoveredCalls = snapshot?.recovered_calls ?? liveTotals?.recoveredCalls ?? 0;
-  const recoveryRate = missedCalls > 0 ? Math.round((recoveredCalls / missedCalls) * 100) : 0;
+  const smsSent = snapshot?.sms_sent ?? liveTotals?.smsSent ?? 0;
+  const smsReplied = liveTotals?.smsReplied ?? 0;
+  const recoveredLeads = liveTotals?.recoveredLeads ?? 0;
+  const recoveryRate = missedCalls > 0 ? Math.round((recoveredLeads / missedCalls) * 100) : 0;
 
   return [
     {
@@ -127,16 +122,28 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
       value: String(missedCalls),
     },
     {
-      change: snapshot ? `${recoveredCalls} recovered` : "Live clinic recovery",
+      change: snapshot ? `${smsSent} sent` : "Live SMS throughput",
+      label: "SMS sent",
+      tone: smsSent > 0 ? "neutral" : "warning",
+      value: String(smsSent),
+    },
+    {
+      change: smsReplied > 0 ? `${smsReplied} replies` : "Live reply tracking",
+      label: "SMS replied",
+      tone: smsReplied > 0 ? "positive" : "neutral",
+      value: String(smsReplied),
+    },
+    {
+      change: `${recoveredLeads} recovered`,
+      label: "Recovered leads",
+      tone: recoveredLeads > 0 ? "positive" : "neutral",
+      value: String(recoveredLeads),
+    },
+    {
+      change: `${recoveryRate}% of missed`,
       label: "Recovery %",
       tone: recoveryRate > 0 ? "positive" : "neutral",
       value: `${recoveryRate}%`,
-    },
-    {
-      change: snapshot ? `${bookedLeads} booked` : "Live recovered revenue",
-      label: "Recovered revenue",
-      tone: "positive",
-      value: formatPounds(revenueRecoveredPence),
     },
   ];
 }
@@ -166,7 +173,14 @@ function buildLeadColumns(leads: PatientLead[]): LeadPipelineColumn[] {
         id: lead.id,
         label: `${formatLabel(lead.source)} lead ${shortId(lead.id)}`,
         lead_score: lead.lead_score,
-        nextAction: lead.next_follow_up_at ? `Follow up ${formatDateTime(lead.next_follow_up_at)}` : `${formatLabel(lead.priority)} priority`,
+        nextAction:
+          lead.status === "recovered"
+            ? "Call back and confirm the next step."
+            : lead.status === "opted_out"
+              ? "Respect the opt-out and close the thread."
+              : lead.next_follow_up_at
+                ? `Follow up ${formatDateTime(lead.next_follow_up_at)}`
+                : `${formatLabel(lead.priority)} priority`,
         priority: lead.priority,
         source: lead.source,
         status: lead.status,
@@ -285,8 +299,13 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   const totalCalls = totalCallsCount ?? (calls ?? []).length;
   const missedCalls = missedCallsCount ?? (calls ?? []).filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).length;
   const recoveredCalls = recoveredCallsCount ?? (calls ?? []).filter((call) => call.status === "recovered").length;
+  const smsSent = (smsEvents ?? []).filter((event) => event.direction === "outbound" && ["queued", "sent", "delivered"].includes(event.status)).length;
+  const smsReplied = (smsEvents ?? []).filter((event) => event.direction === "inbound" && event.recovery_workflow_id !== null).length;
   const liveTotals: LiveMetricTotals = {
     bookedLeads: (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length,
+    recoveredLeads: (leads ?? []).filter((lead) => lead.status === "recovered").length,
+    smsReplied,
+    smsSent,
     missedCalls,
     recoveredCalls,
     totalCalls,

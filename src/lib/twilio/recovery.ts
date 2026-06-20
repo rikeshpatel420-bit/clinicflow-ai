@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, Inserts, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection } from "@/types/database";
+import type { Call, Clinic, Inserts, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection } from "@/types/database";
 import { hashPhoneNumber, normalizePhoneNumber } from "./crypto";
 import { getTwilioConnectionForVoiceNumber, toTwilioConnectionView } from "./config";
 import { classifyTwilioCall, type TwilioWebhookPayload } from "./missed-call";
@@ -35,6 +35,17 @@ async function findTwilioConnectionForPayload(payload: TwilioWebhookPayload) {
   }
 
   return getTwilioConnectionForVoiceNumber(lookupNumber);
+}
+
+async function getClinicName(clinicId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.from("clinics").select("name").eq("id", clinicId).maybeSingle<Pick<Clinic, "name">>();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data.name;
 }
 
 async function upsertCallRecord(input: {
@@ -211,6 +222,7 @@ async function ensureSmsRecovery(input: {
   call: Call;
   connection: TwilioConnection;
   callerNumber: string | null;
+  clinicName: string | null;
   lead: PatientLead | null;
   workflow: RecoveryWorkflow;
 }) {
@@ -253,7 +265,7 @@ async function ensureSmsRecovery(input: {
     return { smsEvent: existingSms, error: null };
   }
 
-  const draft = createRecoverySmsDraft({ patientPhone: input.callerNumber });
+  const draft = createRecoverySmsDraft({ clinicName: input.clinicName, patientPhone: input.callerNumber });
   const sendResult = await sendRecoverySms({ connection: input.connection, draft });
 
   if (sendResult.error) {
@@ -347,9 +359,38 @@ async function ensureSmsRecovery(input: {
 function classifyReplyBody(body: string) {
   const normalized = body.trim().toLowerCase();
   if (!normalized) return "replied" as const;
-  if (/(book|booked|appointment|slot|yes please|call me back)/.test(normalized)) return "booked" as const;
-  if (/(lost|no thanks|stop|not now|cancel|decline)/.test(normalized)) return "lost" as const;
+  if (/(?:^|\b)(stop|unsubscribe|opt out|opt-out|cancel|decline|no thanks|not now)(?:\b|$)/.test(normalized)) return "opted_out" as const;
+  if (/(?:^|\b)(book|booked|appointment|slot)(?:\b|$)/.test(normalized)) return "booked" as const;
+  if (/(?:^|\b)(yes|yes please|call me back|ok|okay|sure|yep|yeah)(?:\b|$)/.test(normalized)) return "recovered" as const;
   return "replied" as const;
+}
+
+function replyStateToWorkflowState(replyState: "replied" | "booked" | "recovered" | "opted_out"): RecoveryWorkflow["state"] {
+  if (replyState === "opted_out") return "opted_out";
+  if (replyState === "recovered") return "recovered";
+  if (replyState === "booked") return "booked";
+  return "replied";
+}
+
+function replyStateToCallRecoveryStatus(replyState: "replied" | "booked" | "recovered" | "opted_out"): Call["recovery_status"] {
+  if (replyState === "booked") return "booked";
+  if (replyState === "recovered") return "recovered";
+  if (replyState === "opted_out") return "lost";
+  return "replied";
+}
+
+function replyStateToLeadStatus(replyState: "replied" | "booked" | "recovered" | "opted_out", currentStatus: PatientLead["status"]) {
+  if (replyState === "booked") return "booked" as const;
+  if (replyState === "recovered") return "recovered" as const;
+  if (replyState === "opted_out") return "opted_out" as const;
+  return currentStatus;
+}
+
+function replyStateToNextAction(replyState: "replied" | "booked" | "recovered" | "opted_out") {
+  if (replyState === "booked") return "Lead booked. Update the schedule and close the loop.";
+  if (replyState === "recovered") return "Lead recovered. Call back and confirm the next step.";
+  if (replyState === "opted_out") return "Patient opted out of SMS recovery.";
+  return "Awaiting staff follow-up.";
 }
 
 async function updateCallAndLeadFromReply(input: {
@@ -357,17 +398,19 @@ async function updateCallAndLeadFromReply(input: {
   clinicId: string;
   lead: PatientLead | null;
   workflow: RecoveryWorkflow;
-  replyState: "replied" | "booked" | "lost";
+  replyState: "replied" | "booked" | "recovered" | "opted_out";
 }) {
   const admin = createSupabaseAdminClient();
   const now = new Date().toISOString();
+  const workflowState = replyStateToWorkflowState(input.replyState);
+  const callRecoveryStatus = replyStateToCallRecoveryStatus(input.replyState);
 
   await admin
     .from("recovery_workflows")
     .update({
-      current_step: input.replyState === "booked" ? Math.max(input.workflow.current_step, 3) : Math.max(input.workflow.current_step, 2),
-      next_action_at: input.replyState === "booked" || input.replyState === "lost" ? null : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      state: input.replyState,
+      current_step: input.replyState === "booked" || input.replyState === "recovered" ? Math.max(input.workflow.current_step, 3) : Math.max(input.workflow.current_step, 2),
+      next_action_at: input.replyState === "booked" || input.replyState === "recovered" || input.replyState === "opted_out" ? null : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      state: workflowState,
     })
     .eq("id", input.workflow.id)
     .eq("clinic_id", input.clinicId);
@@ -375,15 +418,10 @@ async function updateCallAndLeadFromReply(input: {
   await admin
     .from("calls")
     .update({
-      recovery_next_action:
-        input.replyState === "booked"
-          ? "Lead booked. Update the schedule and close the loop."
-          : input.replyState === "lost"
-            ? "Mark the recovery as lost and archive the follow-up."
-            : "Awaiting staff follow-up.",
-      recovery_status: input.replyState,
+      recovery_next_action: replyStateToNextAction(input.replyState),
+      recovery_status: callRecoveryStatus,
       recovery_updated_at: now,
-      status: input.replyState === "booked" ? "recovered" : input.call.status,
+      status: input.replyState === "booked" || input.replyState === "recovered" ? "recovered" : input.call.status,
     })
     .eq("id", input.call.id)
     .eq("clinic_id", input.clinicId);
@@ -393,8 +431,13 @@ async function updateCallAndLeadFromReply(input: {
       .from("patient_leads")
       .update({
         converted_at: input.replyState === "booked" ? now : input.lead.converted_at,
-        loss_reason: input.replyState === "lost" ? "No response after recovery SMS." : input.lead.loss_reason,
-        status: input.replyState === "booked" ? "booked" : input.replyState === "lost" ? "lost" : input.lead.status,
+        loss_reason:
+          input.replyState === "opted_out"
+            ? "Patient opted out of SMS recovery."
+            : input.replyState === "booked"
+              ? null
+              : input.lead.loss_reason,
+        status: replyStateToLeadStatus(input.replyState, input.lead.status),
         updated_at: now,
       })
       .eq("id", input.lead.id)
@@ -416,6 +459,7 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
   }
 
   const connectionView = toTwilioConnectionView(connection);
+  const clinicName = await getClinicName(connection.clinic_id);
   const baseSummary = {
     clinicId: connection.clinic_id,
     connection: connectionView,
@@ -495,6 +539,7 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
         call: { ...call, lead_id: leadResult.lead?.id ?? call.lead_id ?? null },
         connection,
         callerNumber: classification.callerNumber,
+        clinicName,
         lead: leadResult.lead,
         workflow: workflowResult.workflow,
       });

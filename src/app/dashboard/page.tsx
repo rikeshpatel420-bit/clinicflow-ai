@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { DemoKpiBand } from "@/components/dashboard/demo-kpi-band";
 import { DashboardMetricCardView } from "@/components/dashboard/metric-card";
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar";
 import { TwilioStatusStrip } from "@/components/dashboard/twilio-status-strip";
@@ -55,6 +56,26 @@ export default async function DashboardPage({
   if (membershipClinicId) {
     twilioHealth = await getTwilioSetupHealthForClinic(membershipClinicId);
   }
+  const demoKpiBand = dashboard.snapshot
+    ? {
+        appointmentsBooked: dashboard.snapshot.booked_leads,
+        description:
+          "This live snapshot uses the current clinic totals already stored in Supabase, so the numbers stay honest while still feeling premium.",
+        missedCalls: dashboard.snapshot.missed_calls,
+        recoveryRate: dashboard.snapshot.missed_calls > 0 ? Math.round((dashboard.snapshot.booked_leads / dashboard.snapshot.missed_calls) * 100) : 0,
+        revenueRecoveredPence: dashboard.snapshot.revenue_recovered_pence,
+        sourceLabel: "Latest clinic snapshot",
+        title: `Period ${dashboard.snapshot.period_start} to ${dashboard.snapshot.period_end}`,
+      }
+    : {
+        appointmentsBooked: 22,
+        description: "Illustrative numbers keep the dashboard feeling active until a live clinic snapshot is available.",
+        missedCalls: 47,
+        recoveryRate: 91,
+        revenueRecoveredPence: 1_425_000,
+        sourceLabel: "Demo data mode",
+        title: "Premium sample snapshot",
+      };
   const clinic = dashboard.clinic ?? {
     id: "unconfigured",
     name: "Clinic dashboard",
@@ -84,29 +105,20 @@ export default async function DashboardPage({
                 <EmptyState title="Dashboard data unavailable" message={dashboard.error} actionHref="/onboarding" actionLabel="Open onboarding" />
               ) : null}
 
+              <DemoKpiBand
+                appointmentsBooked={demoKpiBand.appointmentsBooked}
+                description={demoKpiBand.description}
+                missedCalls={demoKpiBand.missedCalls}
+                recoveryRate={demoKpiBand.recoveryRate}
+                revenueRecoveredPence={demoKpiBand.revenueRecoveredPence}
+                sourceLabel={demoKpiBand.sourceLabel}
+                title={demoKpiBand.title}
+              />
+
               <section aria-label="Overview metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {dashboard.metrics.map((metric) => (
                   <DashboardMetricCardView key={metric.label} metric={metric} />
                 ))}
-              </section>
-
-              <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950 md:grid-cols-[1fr_auto] md:items-center">
-                <div>
-                  <p className="text-sm font-semibold text-teal-700 dark:text-teal-300">Dashboard metrics model</p>
-                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                    Low-cost operational snapshot
-                  </h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    This panel reads from `dashboard_metric_snapshots` when a snapshot exists, and falls back to live clinic totals so
-                    the cards stay meaningful during demo setup.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-                  <p className="font-mono text-xs text-slate-500 dark:text-slate-400">period</p>
-                  <p className="mt-1 font-semibold text-slate-950 dark:text-white">
-                    {dashboard.snapshot ? `${dashboard.snapshot.period_start} to ${dashboard.snapshot.period_end}` : "No snapshot"}
-                  </p>
-                </div>
               </section>
 
               <MissedCallsTable rows={dashboard.missedCalls} />

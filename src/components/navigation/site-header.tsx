@@ -102,7 +102,7 @@ export function SiteHeader({
                 Get Started
               </Link>
               <Link
-                href="/#pricing"
+                href="/book-demo"
                 className="rounded-full border border-[#cdd8d5] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] shadow-sm hover:border-[#9db2ad]"
               >
                 Book Demo

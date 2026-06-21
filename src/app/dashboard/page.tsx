@@ -8,6 +8,7 @@ import { MissedCallsTable } from "@/components/dashboard/missed-calls-table";
 import { MobileDashboardNav } from "@/components/dashboard/mobile-dashboard-nav";
 import { WorkflowActivityFeed } from "@/components/dashboard/workflow-activity-feed";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SiteHeader } from "@/components/navigation/site-header";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getClinicDashboardData } from "@/lib/dashboard/live-data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -63,6 +64,7 @@ export default async function DashboardPage({
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
+      <SiteHeader activePath="/dashboard" variant="app" />
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
         <DashboardSidebar />
 

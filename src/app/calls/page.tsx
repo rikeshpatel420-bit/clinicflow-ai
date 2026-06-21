@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCallListData } from "@/lib/calls/data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { SiteHeader } from "@/components/navigation/site-header";
 import { addDemoCallAction } from "./actions";
 import { CallStatusBadge, RecoveryStatusBadge } from "./status-badge";
 
@@ -41,7 +42,8 @@ export default async function CallsPage({
 
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
-      <section className="mx-auto grid w-full max-w-7xl gap-6 px-5 py-8 md:px-8">
+      <SiteHeader activePath="/calls" variant="app" />
+      <section className="mx-auto grid w-full max-w-[84rem] gap-6 px-4 py-8 sm:px-6 md:px-8">
         <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold text-[#087968]">{data.clinic?.name ?? "Clinic workspace"}</p>

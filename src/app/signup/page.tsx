@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { signupAction } from "@/app/auth/actions";
+import { SiteFooter } from "@/components/navigation/site-footer";
+import { SiteHeader } from "@/components/navigation/site-header";
 
 type SignupPageProps = {
   searchParams?: Promise<{
@@ -11,19 +13,22 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const params = await searchParams;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7faf9] px-6 py-12 text-[#17211f]">
+    <main className="min-h-screen bg-[#f7faf9] text-[#17211f]">
+      <SiteHeader activePath="/signup" variant="public" />
+
+      <section className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-4 py-12 sm:px-6">
       <section className="w-full max-w-md rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
         <Link href="/" className="flex w-fit items-center gap-3 font-semibold">
           <span className="grid size-9 place-items-center rounded-md bg-[#10201d] text-sm text-white">
             CF
           </span>
-          ClinicFlow AI
+          <span className="text-[#10201d]">ClinicFlow AI</span>
         </Link>
 
         <div className="mt-10">
           <p className="text-sm font-semibold text-[#087968]">Create workspace</p>
           <h1 className="mt-3 text-3xl font-semibold text-[#10201d]">Start your clinic account</h1>
-          <p className="mt-3 leading-7 text-[#65736f]">
+          <p className="mt-3 text-[0.98rem] leading-7 text-[#65736f]">
             Create a Supabase account and your first clinic workspace in one step.
           </p>
         </div>
@@ -80,7 +85,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
           ) : null}
           <button
             type="submit"
-            className="rounded-md bg-[#10201d] px-4 py-3 text-sm font-semibold text-white hover:bg-[#20332f]"
+            className="rounded-full bg-[#10201d] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#20332f]"
           >
             Create account
           </button>
@@ -93,6 +98,10 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
           </Link>
         </p>
       </section>
+
+      </section>
+
+      <SiteFooter />
     </main>
   );
 }

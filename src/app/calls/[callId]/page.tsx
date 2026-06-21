@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { SiteHeader } from "@/components/navigation/site-header";
 import { getCallDetailData } from "@/lib/calls/data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -28,8 +29,9 @@ export default async function CallDetailPage({
   }
 
   return (
-    <main className="min-h-screen bg-[#eef4f2] px-5 py-8 text-[#17211f] md:px-8">
-      <section className="mx-auto grid max-w-4xl gap-6">
+    <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
+      <SiteHeader activePath="/calls" variant="app" />
+      <section className="mx-auto grid max-w-4xl gap-6 px-4 py-8 sm:px-6 md:px-8">
         <Link href="/calls" className="text-sm font-semibold text-[#087968] hover:text-[#0a8f7b]">
           Back to calls
         </Link>
@@ -47,7 +49,7 @@ export default async function CallDetailPage({
             </div>
           </div>
 
-          <p className="mt-4 leading-7 text-[#65736f]">
+          <p className="mt-4 text-[0.98rem] leading-7 text-[#65736f]">
             Call detail placeholder ready for transcripts, recovery activity, notes, and future Twilio metadata.
           </p>
 

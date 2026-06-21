@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import { SiteFooter } from "@/components/navigation/site-footer";
+import { SiteHeader } from "@/components/navigation/site-header";
 
 const painPoints = [
   {
@@ -40,55 +42,32 @@ const roiInputs = [
 export default function Home() {
   return (
     <main className="min-h-screen bg-[#f7faf9] text-[#17211f]">
-      <nav className="sticky top-0 z-30 border-b border-black/5 bg-[#f7faf9]/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-3 font-semibold">
-            <span className="grid size-9 place-items-center rounded-md bg-[#10201d] text-sm text-white">
-              CF
-            </span>
-            <span>ClinicFlow AI</span>
-          </Link>
-          <div className="hidden items-center gap-8 text-sm font-medium text-[#52615d] md:flex">
-            <a href="#solution" className="hover:text-[#17211f]">Solution</a>
-            <a href="#roi" className="hover:text-[#17211f]">ROI</a>
-            <a href="#features" className="hover:text-[#17211f]">Features</a>
-            <a href="#pricing" className="hover:text-[#17211f]">Pricing</a>
-          </div>
-          <div className="flex items-center gap-3 text-sm font-semibold">
-            <Link href="/login" className="hidden text-[#52615d] hover:text-[#17211f] sm:inline">
-              Log in
-            </Link>
-            <Link href="/dashboard" className="rounded-md bg-[#10201d] px-4 py-2.5 text-white hover:bg-[#20332f]">
-              View dashboard
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <SiteHeader activePath="/" variant="public" />
 
-      <section className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-16 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
+      <section className="mx-auto grid max-w-[84rem] items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:py-24">
         <div>
           <p className="mb-5 w-fit rounded-md border border-[#c8eee6] bg-white px-3 py-1.5 text-sm font-semibold text-[#087968]">
             Premium clinic operations platform
           </p>
-          <h1 className="max-w-4xl text-5xl font-semibold leading-[1.05] text-[#10201d] md:text-7xl">
+          <h1 className="max-w-4xl text-5xl font-semibold leading-[1.03] text-[#10201d] md:text-7xl">
             Convert missed calls into booked patients.
           </h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-[#52615d]">
+          <p className="mt-6 max-w-2xl text-[1.05rem] leading-8 text-[#52615d] md:text-lg">
             ClinicFlow AI gives clinics a calm command centre for missed call recovery,
             AI reception, patient CRM, scheduling, and operational analytics.
           </p>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-            <Link href="/login" className="rounded-md bg-[#0a8f7b] px-5 py-3 text-center text-sm font-semibold text-white shadow-sm shadow-teal-900/10 hover:bg-[#087968]">
+            <Link href="/signup" className="rounded-full bg-[#0a8f7b] px-5 py-3 text-center text-sm font-semibold text-white shadow-sm shadow-teal-900/10 hover:bg-[#087968]">
               Start clinic setup
             </Link>
-            <Link href="#pricing" className="rounded-md border border-[#cdd8d5] bg-white px-5 py-3 text-center text-sm font-semibold text-[#17211f] hover:border-[#9db2ad]">
+            <Link href="/#pricing" className="rounded-full border border-[#cdd8d5] bg-white px-5 py-3 text-center text-sm font-semibold text-[#17211f] shadow-sm hover:border-[#9db2ad]">
               See pricing
             </Link>
           </div>
           <div className="mt-10 grid max-w-xl grid-cols-3 gap-4 border-t border-black/10 pt-6 text-sm">
-            <div><strong className="block text-2xl text-[#10201d]">24/7</strong><span className="text-[#65736f]">patient response</span></div>
-            <div><strong className="block text-2xl text-[#10201d]">42%</strong><span className="text-[#65736f]">faster follow-up</span></div>
-            <div><strong className="block text-2xl text-[#10201d]">1 view</strong><span className="text-[#65736f]">for clinic ops</span></div>
+            <div><strong className="block text-[2rem] leading-none text-[#10201d]">24/7</strong><span className="mt-1 block text-[#65736f]">patient response</span></div>
+            <div><strong className="block text-[2rem] leading-none text-[#10201d]">42%</strong><span className="mt-1 block text-[#65736f]">faster follow-up</span></div>
+            <div><strong className="block text-[2rem] leading-none text-[#10201d]">1 view</strong><span className="mt-1 block text-[#65736f]">for clinic ops</span></div>
           </div>
         </div>
         <div className="relative">
@@ -105,7 +84,7 @@ export default function Home() {
       </section>
 
       <section id="roi" className="border-y border-black/5 bg-white py-20">
-        <div className="mx-auto grid max-w-7xl gap-10 px-6 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="mx-auto grid max-w-[84rem] gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr]">
           <div>
             <p className="text-sm font-semibold text-[#087968]">ROI demo</p>
             <h2 className="mt-3 text-3xl font-semibold text-[#10201d] md:text-4xl">
@@ -136,7 +115,7 @@ export default function Home() {
       </section>
 
       <section className="border-y border-black/5 bg-white py-16">
-        <div className="mx-auto max-w-7xl px-6">
+        <div className="mx-auto max-w-[84rem] px-4 sm:px-6">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold text-[#087968]">Operational friction</p>
             <h2 className="mt-3 text-3xl font-semibold text-[#10201d] md:text-4xl">
@@ -154,7 +133,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="solution" className="mx-auto grid max-w-7xl gap-10 px-6 py-20 lg:grid-cols-[0.9fr_1.1fr]">
+      <section id="solution" className="mx-auto grid max-w-[84rem] gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div>
           <p className="text-sm font-semibold text-[#087968]">AI solution overview</p>
           <h2 className="mt-3 text-3xl font-semibold text-[#10201d] md:text-4xl">
@@ -177,7 +156,7 @@ export default function Home() {
       </section>
 
       <section id="features" className="bg-[#111c1a] py-20 text-white">
-        <div className="mx-auto max-w-7xl px-6">
+        <div className="mx-auto max-w-[84rem] px-4 sm:px-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-sm font-semibold text-[#72e5d3]">Core platform</p>
@@ -201,7 +180,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="pricing" className="mx-auto max-w-7xl px-6 py-20">
+      <section id="pricing" className="mx-auto max-w-[84rem] px-4 py-20 sm:px-6">
         <div className="max-w-2xl">
           <p className="text-sm font-semibold text-[#087968]">Pricing</p>
           <h2 className="mt-3 text-3xl font-semibold text-[#10201d] md:text-4xl">
@@ -222,7 +201,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 pb-20">
+      <section className="mx-auto max-w-[84rem] px-4 pb-20 sm:px-6">
         <div className="rounded-lg bg-[#10201d] p-8 text-white md:p-12">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
@@ -238,12 +217,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-black/5 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-[#65736f] md:flex-row md:items-center md:justify-between">
-          <p className="font-semibold text-[#10201d]">ClinicFlow AI</p>
-          <p>Clinic operations, missed call recovery, patient CRM, and scheduling.</p>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

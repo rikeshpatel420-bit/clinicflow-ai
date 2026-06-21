@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SiteHeader } from "@/components/navigation/site-header";
 
 const nav = [
   { href: "/integrations", label: "Integrations" },
@@ -22,7 +23,8 @@ export function IntegrationShell({
 }) {
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 md:px-8">
+      <SiteHeader activePath="/integrations/twilio" variant="app" />
+      <section className="mx-auto grid max-w-[84rem] gap-6 px-4 py-8 sm:px-6 md:px-8">
         <header className="rounded-lg bg-[#10201d] p-6 text-white shadow-sm">
           <p className="text-sm font-semibold text-[#72e5d3]">{eyebrow}</p>
           <h1 className="mt-3 text-4xl font-semibold">{title}</h1>

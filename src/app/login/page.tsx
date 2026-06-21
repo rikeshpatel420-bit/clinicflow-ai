@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { loginAction } from "@/app/auth/actions";
+import { SiteFooter } from "@/components/navigation/site-footer";
+import { SiteHeader } from "@/components/navigation/site-header";
 
 type LoginPageProps = {
   searchParams?: Promise<{
@@ -14,20 +16,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="min-h-screen bg-[#f7faf9] text-[#17211f]">
-      <div className="grid min-h-screen lg:grid-cols-[0.92fr_1.08fr]">
-        <section className="flex items-center justify-center px-6 py-12">
+      <SiteHeader activePath="/login" variant="public" />
+
+      <div className="grid min-h-[calc(100vh-5rem)] lg:grid-cols-[0.96fr_1.04fr]">
+        <section className="flex items-center justify-center px-4 py-12 sm:px-6">
           <div className="w-full max-w-md rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
             <Link href="/" className="flex w-fit items-center gap-3 font-semibold">
               <span className="grid size-9 place-items-center rounded-md bg-[#10201d] text-sm text-white">
                 CF
               </span>
-              ClinicFlow AI
+              <span className="text-[#10201d]">ClinicFlow AI</span>
             </Link>
 
             <div className="mt-10">
               <p className="text-sm font-semibold text-[#087968]">Secure clinic access</p>
               <h1 className="mt-3 text-3xl font-semibold text-[#10201d]">Log in to your workspace</h1>
-              <p className="mt-3 leading-7 text-[#65736f]">
+              <p className="mt-3 text-[0.98rem] leading-7 text-[#65736f]">
                 Access your clinic workspace with Supabase email and password authentication.
               </p>
             </div>
@@ -73,7 +77,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               ) : null}
               <button
                 type="submit"
-                className="rounded-md bg-[#10201d] px-4 py-3 text-sm font-semibold text-white hover:bg-[#20332f]"
+                className="rounded-full bg-[#10201d] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#20332f]"
               >
                 Continue
               </button>
@@ -106,6 +110,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </div>
         </section>
       </div>
+
+      <SiteFooter />
     </main>
   );
 }

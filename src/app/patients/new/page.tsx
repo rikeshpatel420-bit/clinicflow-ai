@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SiteHeader } from "@/components/navigation/site-header";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { createPatientLeadAction } from "./actions";
@@ -25,15 +26,17 @@ export default async function NewPatientPage({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7faf9] px-6 py-12 text-[#17211f]">
-      <section className="w-full max-w-2xl rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
+    <main className="min-h-screen bg-[#f7faf9] text-[#17211f]">
+      <SiteHeader activePath="/patients" variant="app" />
+      <section className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-4 py-12 sm:px-6">
+        <section className="w-full max-w-2xl rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
         <Link href="/patients" className="text-sm font-semibold text-[#087968] hover:text-[#0a8f7b]">
           Back to patients
         </Link>
         <div className="mt-8">
           <p className="text-sm font-semibold text-[#087968]">Patient CRM</p>
           <h1 className="mt-3 text-3xl font-semibold text-[#10201d]">Add patient</h1>
-          <p className="mt-3 leading-7 text-[#65736f]">
+          <p className="mt-3 text-[0.98rem] leading-7 text-[#65736f]">
             Add a clinic-scoped patient lead. Contact details stay attached to the lead summary until the dedicated patient record table is enabled.
           </p>
           {error ? (
@@ -84,11 +87,12 @@ export default async function NewPatientPage({
           </label>
           <button
             type="submit"
-            className="rounded-md bg-[#10201d] px-4 py-3 text-sm font-semibold text-white hover:bg-[#20332f]"
+            className="rounded-full bg-[#10201d] px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#20332f]"
           >
             Save patient lead
           </button>
         </form>
+      </section>
       </section>
     </main>
   );

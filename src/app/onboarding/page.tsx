@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { SiteFooter } from "@/components/navigation/site-footer";
+import { SiteHeader } from "@/components/navigation/site-header";
 import { OnboardingForm } from "./onboarding-form";
 
 const steps = [
@@ -27,19 +29,22 @@ export default async function OnboardingPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7faf9] px-6 py-12 text-[#17211f]">
-      <section className="w-full max-w-2xl rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
+    <main className="min-h-screen bg-[#f7faf9] text-[#17211f]">
+      <SiteHeader activePath="/onboarding" variant="app" />
+
+      <section className="flex min-h-[calc(100vh-5rem)] items-center justify-center px-4 py-12 sm:px-6">
+        <section className="w-full max-w-2xl rounded-lg border border-[#dce6e3] bg-white p-8 shadow-xl shadow-slate-900/5">
         <Link href="/" className="flex w-fit items-center gap-3 font-semibold">
           <span className="grid size-9 place-items-center rounded-md bg-[#10201d] text-sm text-white">
             CF
           </span>
-          ClinicFlow AI
+          <span className="text-[#10201d]">ClinicFlow AI</span>
         </Link>
 
         <div className="mt-10">
           <p className="text-sm font-semibold text-[#087968]">Clinic onboarding</p>
           <h1 className="mt-3 text-3xl font-semibold text-[#10201d]">Set up your clinic workspace</h1>
-          <p className="mt-3 leading-7 text-[#65736f]">
+          <p className="mt-3 text-[0.98rem] leading-7 text-[#65736f]">
             Create the tenant workspace, app user profile, and owner membership used by
             the clinic-scoped dashboard.
           </p>
@@ -58,6 +63,9 @@ export default async function OnboardingPage() {
           ))}
         </div>
       </section>
+      </section>
+
+      <SiteFooter />
     </main>
   );
 }

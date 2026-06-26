@@ -22,6 +22,7 @@ const appNav: NavItem[] = [
   { href: "/inbox", label: "Inbox" },
   { href: "/integrations/twilio", label: "Integrations" },
   { href: "/onboarding", label: "Onboarding" },
+  { href: "/system", label: "System" },
   { href: "/", label: "Public site" },
 ];
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SiteHeader } from "@/components/navigation/site-header";
 
 const aiNav = [
   { href: "/ai", label: "AI Command" },
@@ -23,7 +24,8 @@ export function AiShell({
 }) {
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 md:px-8">
+      <SiteHeader activePath={active} variant="app" />
+      <section className="mx-auto grid max-w-[88rem] gap-6 px-4 py-8 sm:px-6 lg:px-8">
         <header className="rounded-lg bg-[#10201d] p-6 text-white shadow-sm">
           <p className="text-sm font-semibold text-[#72e5d3]">{eyebrow}</p>
           <div className="mt-3 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

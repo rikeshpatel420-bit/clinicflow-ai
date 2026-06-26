@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Clinic, PatientLead } from "@/types/database";
+import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -13,6 +13,7 @@ export type PatientRecord = {
   full_name: string;
   phone: string | null;
   preferred_name: string | null;
+  notes: string | null;
   source: "manual" | "website" | "phone" | "referral" | "import";
   status: "active" | "lead" | "inactive" | "archived";
   updated_at: string;
@@ -30,6 +31,39 @@ export type PatientListData = {
   filters: Required<PatientFilters>;
   patients: PatientRecord[];
   source: "demo" | "supabase";
+};
+
+export type PatientTimelineItem = {
+  detail: string;
+  id: string;
+  kind: "call" | "sms" | "voicemail" | "workflow" | "summary" | "note";
+  timestamp: string;
+  tone: "positive" | "neutral" | "warning";
+  title: string;
+};
+
+export type PatientDetailData = PatientListData & {
+  callCount: number;
+  lead: PatientRecord | null;
+  recommendedAction: string;
+  smsCount: number;
+  summary: {
+    appointmentRecommendation: string;
+    clinicalNotes: string;
+    emailRecommendation: string;
+    followUpActions: string[];
+    outstandingTasks: string[];
+    patientSummary: string;
+    reasonForCalling: string;
+    receptionNotes: string;
+    smsRecommendation: string;
+    treatmentRecommendation: string;
+    urgencyScore: number;
+  };
+  timeline: PatientTimelineItem[];
+  transcriptCount: number;
+  voicemailCount: number;
+  workflowCount: number;
 };
 
 function normalizeFilters(filters: PatientFilters): Required<PatientFilters> {
@@ -106,6 +140,7 @@ function leadToPatientRecord(lead: PatientLead): PatientRecord {
     id: lead.id,
     phone: null,
     preferred_name: leadPreferredName(fullName),
+    notes: lead.enquiry_summary,
     source: leadSourceToPatientSource(lead.source),
     status: leadStatusToPatientStatus(lead.status),
     updated_at: lead.updated_at,
@@ -168,10 +203,249 @@ export async function getPatientListData(user: Pick<User, "email" | "id" | "user
 
 export async function getPatientDetailData(user: Pick<User, "email" | "id" | "user_metadata"> | null, patientId: string) {
   const listData = await getPatientListData(user);
-  const patient = listData.patients.find((item) => item.id === patientId) ?? null;
+  const lead = listData.patients.find((item) => item.id === patientId) ?? null;
+
+  if (!lead || listData.source !== "supabase" || !user || !listData.clinic) {
+    return {
+      ...listData,
+      callCount: 0,
+      lead,
+      recommendedAction: lead ? "Review the patient lead details." : "Create or recover the patient lead first.",
+      smsCount: 0,
+      summary: {
+        appointmentRecommendation: "Appointment recommendation will appear once the patient is linked to a live call.",
+        clinicalNotes: "Clinical notes will appear once live data is available.",
+        emailRecommendation: "Email recommendation will appear once live data is available.",
+        followUpActions: ["Review the patient record."],
+        outstandingTasks: ["Link a call or recovery workflow."],
+        patientSummary: lead?.notes ?? "Patient summary pending.",
+        reasonForCalling: lead?.notes ?? "Reason for calling pending.",
+        receptionNotes: lead ? "Review the lead details and decide the next step." : "Reception notes pending.",
+        smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
+        treatmentRecommendation: "Reception callback",
+        urgencyScore: 0,
+      },
+      timeline: [],
+      transcriptCount: 0,
+      voicemailCount: 0,
+      workflowCount: 0,
+    } satisfies PatientDetailData;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const membership = await getActiveClinicMembershipForUser(user);
+
+  if (!membership) {
+    return {
+      ...listData,
+      callCount: 0,
+      lead,
+      recommendedAction: "Create or recover the patient lead first.",
+      smsCount: 0,
+      summary: {
+        appointmentRecommendation: "Appointment recommendation will appear once the patient is linked to a live call.",
+        clinicalNotes: "Clinical notes will appear once live data is available.",
+        emailRecommendation: "Email recommendation will appear once live data is available.",
+        followUpActions: ["Review the patient record."],
+        outstandingTasks: ["Link a call or recovery workflow."],
+        patientSummary: lead?.notes ?? "Patient summary pending.",
+        reasonForCalling: lead?.notes ?? "Reason for calling pending.",
+        receptionNotes: lead ? "Review the lead details and decide the next step." : "Reception notes pending.",
+        smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
+        treatmentRecommendation: "Reception callback",
+        urgencyScore: 0,
+      },
+      timeline: [],
+      transcriptCount: 0,
+      voicemailCount: 0,
+      workflowCount: 0,
+    } satisfies PatientDetailData;
+  }
+
+  const [{ data: calls }, { data: smsEvents }, { data: workflows }] = await Promise.all([
+    supabase
+      .from("calls")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("lead_id", patientId)
+      .is("deleted_at", null)
+      .order("started_at", { ascending: false })
+      .limit(20)
+      .returns<Call[]>(),
+    supabase
+      .from("sms_events")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("lead_id", patientId)
+      .order("occurred_at", { ascending: false })
+      .limit(20)
+      .returns<SmsEvent[]>(),
+    supabase
+      .from("recovery_workflows")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("lead_id", patientId)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(10)
+      .returns<RecoveryWorkflow[]>(),
+  ]);
+
+  const relatedCalls = calls ?? [];
+  const relatedSms = smsEvents ?? [];
+  const relatedWorkflows = workflows ?? [];
+  const relatedCallIds = relatedCalls.map((call) => call.id);
+
+  const [{ data: voicemails }, { data: transcripts }] = await Promise.all([
+    relatedCallIds.length
+      ? supabase
+          .from("voicemail_messages")
+          .select("*")
+          .eq("clinic_id", membership.clinic_id)
+          .is("deleted_at", null)
+          .in("call_id", relatedCallIds)
+          .order("updated_at", { ascending: false })
+          .returns<VoicemailMessage[]>()
+      : Promise.resolve({ data: [] as VoicemailMessage[] }),
+    relatedCallIds.length
+      ? supabase
+          .from("call_transcripts")
+          .select("*")
+          .eq("clinic_id", membership.clinic_id)
+          .is("deleted_at", null)
+          .in("call_id", relatedCallIds)
+          .order("updated_at", { ascending: false })
+          .returns<CallTranscript[]>()
+      : Promise.resolve({ data: [] as CallTranscript[] }),
+  ]);
+
+  const relatedVoicemails = voicemails ?? [];
+  const relatedTranscripts = transcripts ?? [];
+
+  const timeline: PatientTimelineItem[] = [
+    ...(relatedCalls.map((call): PatientTimelineItem => ({
+      detail:
+        call.status === "missed"
+          ? "Missed call captured and queued for recovery."
+          : call.status === "answered"
+            ? "Answered call logged with live handling."
+            : `Call updated to ${call.status}.`,
+      id: `call-${call.id}`,
+      kind: "call",
+      timestamp: call.updated_at,
+      tone: call.status === "missed" || call.status === "abandoned" ? "warning" : "positive",
+      title: "Call history",
+    })) ?? []),
+    ...(relatedSms.map((sms): PatientTimelineItem => ({
+      detail: sms.body_preview ?? "SMS event recorded.",
+      id: `sms-${sms.id}`,
+      kind: "sms",
+      timestamp: sms.occurred_at,
+      tone: sms.direction === "outbound" && ["sent", "delivered"].includes(sms.status) ? "positive" : sms.direction === "inbound" ? "neutral" : "warning",
+      title: sms.direction === "outbound" ? "Outbound SMS" : "Inbound SMS",
+    })) ?? []),
+    ...(relatedVoicemails.map((voicemail): PatientTimelineItem => ({
+      detail: voicemail.summary ?? voicemail.transcript_text ?? "Voicemail received.",
+      id: `voicemail-${voicemail.id}`,
+      kind: "voicemail",
+      timestamp: voicemail.updated_at,
+      tone: voicemail.status === "failed" ? "warning" : "neutral",
+      title: "Voicemail",
+    })) ?? []),
+    ...(relatedTranscripts.map((transcript): PatientTimelineItem => ({
+      detail: transcript.summary ?? transcript.transcript_text.slice(0, 120),
+      id: `transcript-${transcript.id}`,
+      kind: "summary",
+      timestamp: transcript.updated_at,
+      tone: transcript.status === "ready" ? "positive" : "neutral",
+      title: "AI summary",
+    })) ?? []),
+    ...(relatedWorkflows.map((workflow): PatientTimelineItem => ({
+      detail: `Recovery workflow moved to ${workflow.state.replace(/_/g, " ")}.`,
+      id: `workflow-${workflow.id}`,
+      kind: "workflow",
+      timestamp: workflow.updated_at,
+      tone: workflow.state === "failed" ? "warning" : workflow.state === "recovered" || workflow.state === "booked" ? "positive" : "neutral",
+      title: "Recovery workflow",
+    })) ?? []),
+    ...(lead.notes
+      ? [
+          {
+            detail: lead.notes,
+            id: `note-${lead.id}`,
+            kind: "note" as const,
+            timestamp: lead.updated_at,
+            tone: "neutral" as const,
+            title: "Reception note",
+          },
+        ]
+      : []),
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return {
     ...listData,
-    patient,
-  };
+    callCount: relatedCalls.length,
+    lead,
+    recommendedAction:
+      lead.status === "active"
+        ? "Confirm the appointment and keep the relationship warm."
+        : lead.status === "inactive"
+          ? "Respect the opt-out and close the thread."
+          : "Follow up with a staff-approved callback or SMS.",
+    smsCount: relatedSms.length,
+    summary: {
+      appointmentRecommendation:
+        lead.status === "active"
+          ? "Confirm the booking and keep the clinic handover calm."
+          : "Offer the first clinically appropriate appointment and check diary availability.",
+      clinicalNotes:
+        lead.source === "phone"
+          ? "Phone enquiry with potential clinical urgency; keep triage clear and concise."
+          : "Review the lead notes and decide whether a clinician should be involved.",
+      emailRecommendation:
+        lead.status === "inactive"
+          ? "Send a short follow-up email only if the patient explicitly prefers written communication."
+          : "Email confirmation can be used to reinforce the booking or callback.",
+      followUpActions: [
+        "Confirm the patient prefers call back, SMS, or booking link.",
+        "Review the diary for the next clinically appropriate slot.",
+        "Mark the lead outcome once the patient responds.",
+      ],
+      outstandingTasks: [
+        "Check for any emergency symptoms before routine follow-up.",
+        "Route to the right clinician if the treatment requires clinical input.",
+      ],
+      patientSummary: lead.notes ?? lead.full_name,
+      reasonForCalling: lead.notes ?? "Patient lead enquiry summary.",
+      receptionNotes: recommendedActionForLead(lead),
+      smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
+      treatmentRecommendation:
+        lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain")
+          ? "Urgent dental assessment"
+          : lead.source === "phone"
+            ? "Reception callback"
+            : "Routine consultation",
+      urgencyScore: lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain") ? 94 : lead.status === "active" ? 78 : 72,
+    },
+    timeline,
+    transcriptCount: relatedTranscripts.length,
+    voicemailCount: relatedVoicemails.length,
+    workflowCount: relatedWorkflows.length,
+  } satisfies PatientDetailData;
+}
+
+function recommendedActionForLead(lead: PatientRecord) {
+  if (lead.status === "active") {
+    return "Confirm the booking, keep the tone warm, and close the recovery loop.";
+  }
+
+  if (lead.status === "inactive") {
+    return "Respect the opt-out and close the thread cleanly.";
+  }
+
+  if (lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain")) {
+    return "Treat as urgent and prioritise a same-day callback.";
+  }
+
+  return "Use a calm callback or SMS reply to keep the conversation moving.";
 }

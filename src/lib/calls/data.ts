@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Call, Clinic, PatientLead } from "@/types/database";
+import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { demoClinic } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -28,7 +28,7 @@ type LiveCallRow = Pick<
   | "deleted_at"
 >;
 
-type CallLead = Pick<PatientLead, "enquiry_summary" | "estimated_value_pence" | "id">;
+type CallLead = Pick<PatientLead, "enquiry_summary" | "estimated_value_pence" | "id" | "priority" | "source" | "status">;
 
 export type CallRecord = LiveCallRow & {
   callerLabel: string;
@@ -43,6 +43,16 @@ export type CallListData = {
   emptyMessage: string | null;
   error: string | null;
   source: "demo" | "supabase";
+};
+
+export type CallDetailData = CallListData & {
+  call: CallRecord | null;
+  lead: CallLead | null;
+  recommendedAction: string;
+  smsEvents: SmsEvent[];
+  transcript: CallTranscript | null;
+  voicemail: VoicemailMessage | null;
+  workflow: RecoveryWorkflow | null;
 };
 
 const now = new Date().toISOString();
@@ -195,5 +205,81 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
   const listData = await getCallListData(user);
   const call = listData.calls.find((item) => item.id === callId) ?? null;
 
-  return { ...listData, call };
+  if (!call || listData.source !== "supabase" || !user || !listData.clinic) {
+    return {
+      ...listData,
+      call,
+      lead: null,
+      recommendedAction: call ? "Review the call log and recovery notes." : "No call found.",
+      smsEvents: [],
+      transcript: null,
+      voicemail: null,
+      workflow: null,
+    } satisfies CallDetailData;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const membership = await getActiveClinicMembershipForUser(user);
+
+  if (!membership) {
+    return {
+      ...listData,
+      call,
+      lead: null,
+      recommendedAction: "Review the call log and recovery notes.",
+      smsEvents: [],
+      transcript: null,
+      voicemail: null,
+      workflow: null,
+    } satisfies CallDetailData;
+  }
+
+  const [{ data: lead }, { data: smsEvents }, { data: workflow }, { data: voicemail }, { data: transcript }] = await Promise.all([
+    call.lead_id
+      ? supabase.from("patient_leads").select("id,enquiry_summary,estimated_value_pence,status,source,priority").eq("clinic_id", membership.clinic_id).eq("id", call.lead_id).maybeSingle<CallLead>()
+      : Promise.resolve({ data: null as CallLead | null }),
+    supabase
+      .from("sms_events")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("call_id", call.id)
+      .order("occurred_at", { ascending: true })
+      .returns<SmsEvent[]>(),
+    supabase
+      .from("recovery_workflows")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("call_id", call.id)
+      .maybeSingle<RecoveryWorkflow>(),
+    supabase
+      .from("voicemail_messages")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("call_id", call.id)
+      .maybeSingle<VoicemailMessage>(),
+    supabase
+      .from("call_transcripts")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("call_id", call.id)
+      .maybeSingle<CallTranscript>(),
+  ]);
+
+  return {
+    ...listData,
+    call,
+    lead: lead ?? null,
+    recommendedAction:
+      call.status === "missed"
+        ? "Send or confirm the recovery SMS and wait for the reply."
+        : call.status === "voicemail"
+          ? "Review the voicemail transcript and call back promptly."
+          : call.status === "answered"
+            ? "Confirm the outcome and capture the next booking step."
+            : "Review the call and decide the next recovery step.",
+    smsEvents: smsEvents ?? [],
+    transcript: transcript ?? null,
+    voicemail: voicemail ?? null,
+    workflow: workflow ?? null,
+  } satisfies CallDetailData;
 }

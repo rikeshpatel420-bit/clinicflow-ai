@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Campaign, Clinic, Conversation, ConversationMessage, SmsEvent } from "@/types/database";
+import type { Call, Campaign, Clinic, Conversation, ConversationMessage, PatientLead, SmsEvent } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -106,41 +106,69 @@ function buildData(input: Omit<CommunicationsData, "activity" | "emptyMessage">)
   };
 }
 
-function conversationFromSmsEvent(event: SmsEvent): Conversation {
-  return {
-    ai_summary: event.body_preview,
-    channel: "sms",
-    clinic_id: event.clinic_id,
-    created_at: event.occurred_at,
-    deleted_at: null,
-    follow_up_state: event.direction === "inbound" ? "awaiting_reply" : "scheduled",
-    id: `sms-thread-${event.id}`,
-    last_message_at: event.occurred_at,
-    patient_id: null,
-    priority: event.direction === "inbound" ? "urgent" : "normal",
-    status: event.direction === "inbound" ? "open" : "pending",
-    subject: event.direction === "inbound" ? "Patient SMS reply" : "Recovery SMS sent",
-    updated_at: event.occurred_at,
-  };
-}
-
 function messageStatusFromSmsEvent(status: SmsEvent["status"]): ConversationMessage["delivery_status"] {
   if (status === "cancelled" || status === "undelivered") return "failed";
   return status;
 }
 
-function messageFromSmsEvent(event: SmsEvent): ConversationMessage {
+function messageFromSmsEvent(event: SmsEvent, conversationId: string): ConversationMessage {
   return {
     ai_generated: event.direction === "outbound",
     body: event.body_preview ?? "SMS event recorded.",
     clinic_id: event.clinic_id,
-    conversation_id: `sms-thread-${event.id}`,
+    conversation_id: conversationId,
     created_at: event.occurred_at,
     delivery_status: messageStatusFromSmsEvent(event.status),
     direction: event.direction,
     id: event.id,
     sender_type: event.direction === "inbound" ? "patient" : "ai",
     sent_at: event.occurred_at,
+  };
+}
+
+function conversationKey(event: SmsEvent) {
+  return event.recovery_workflow_id ?? event.call_id ?? event.lead_id ?? event.to_number_hash ?? event.from_number_hash ?? event.id;
+}
+
+function replyStateFromEvents(events: SmsEvent[]): Conversation["follow_up_state"] {
+  const latest = events[events.length - 1];
+  if (!latest) return "not_started";
+  if (events.some((event) => event.direction === "inbound")) return "awaiting_reply";
+  if (latest.status === "delivered" || latest.status === "sent") return "scheduled";
+  if (latest.status === "failed" || latest.status === "undelivered") return "failed";
+  return "not_started";
+}
+
+function conversationFromGroup(input: {
+  events: SmsEvent[];
+  leadsById: Map<string, PatientLead>;
+  callsById: Map<string, Call>;
+}): Conversation {
+  const sorted = [...input.events].sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime());
+  const latest = sorted[sorted.length - 1];
+  const lead = latest?.lead_id ? input.leadsById.get(latest.lead_id) ?? null : null;
+  const call = latest?.call_id ? input.callsById.get(latest.call_id) ?? null : null;
+  const outbound = [...sorted].reverse().find((event) => event.direction === "outbound");
+  const subject =
+    lead?.enquiry_summary?.split(".")[0]?.trim() ||
+    call?.recovery_next_action ||
+    (outbound?.body_preview ? outbound.body_preview.slice(0, 48) : "SMS conversation");
+  const priority = lead?.priority === "urgent" || lead?.priority === "high" || sorted.some((event) => event.direction === "inbound") ? "urgent" : "normal";
+
+  return {
+    ai_summary: latest?.body_preview ?? lead?.enquiry_summary ?? "SMS conversation in progress.",
+    channel: "sms",
+    clinic_id: latest?.clinic_id ?? call?.clinic_id ?? lead?.clinic_id ?? demoClinic.id,
+    created_at: sorted[0]?.occurred_at ?? latest?.occurred_at ?? new Date().toISOString(),
+    deleted_at: null,
+    follow_up_state: replyStateFromEvents(sorted),
+    id: `sms-thread-${conversationKey(latest ?? sorted[0])}`,
+    last_message_at: latest?.occurred_at ?? new Date().toISOString(),
+    patient_id: lead?.id ?? null,
+    priority,
+    status: sorted.some((event) => event.direction === "inbound") ? "open" : "pending",
+    subject,
+    updated_at: latest?.occurred_at ?? new Date().toISOString(),
   };
 }
 
@@ -174,7 +202,7 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
     });
   }
 
-  const [{ data: clinic, error: clinicError }, { data: smsEvents, error: smsError }] = await Promise.all([
+  const [{ data: clinic, error: clinicError }, { data: smsEvents, error: smsError }, { data: leads }, { data: calls }] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
     supabase
       .from("sms_events")
@@ -183,10 +211,26 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
       .order("occurred_at", { ascending: false })
       .limit(25)
       .returns<SmsEvent[]>(),
+    supabase.from("patient_leads").select("*").eq("clinic_id", membership.clinic_id).is("deleted_at", null).limit(50).returns<PatientLead[]>(),
+    supabase.from("calls").select("*").eq("clinic_id", membership.clinic_id).is("deleted_at", null).limit(50).returns<Call[]>(),
   ]);
 
-  const conversations = (smsEvents ?? []).map(conversationFromSmsEvent);
-  const messages = (smsEvents ?? []).map(messageFromSmsEvent);
+  const grouped = new Map<string, SmsEvent[]>();
+  for (const event of smsEvents ?? []) {
+    const key = conversationKey(event);
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(event);
+    grouped.set(key, bucket);
+  }
+
+  const leadsById = new Map((leads ?? []).map((lead) => [lead.id, lead]));
+  const callsById = new Map((calls ?? []).map((call) => [call.id, call]));
+  const conversations = Array.from(grouped.values()).map((events) => conversationFromGroup({ callsById, events, leadsById }));
+  const messages = Array.from(grouped.entries()).flatMap(([conversationKeyValue, events]) =>
+    [...events]
+      .sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime())
+      .map((event) => messageFromSmsEvent({ ...event, provider_message_id: event.provider_message_id ?? `thread-${conversationKeyValue}` }, `sms-thread-${conversationKeyValue}`)),
+  );
 
   return buildData({
     campaigns: [],

@@ -99,7 +99,7 @@ export default async function DashboardPage({
 
           {twilioHealth ? <TwilioStatusStrip health={twilioHealth} /> : null}
 
-          <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-6 px-4 py-6 sm:px-6 xl:grid-cols-[minmax(0,1fr)_400px]">
             <div className="grid min-w-0 gap-6">
               {dashboard.error ? (
                 <EmptyState title="Dashboard data unavailable" message={dashboard.error} actionHref="/onboarding" actionLabel="Open onboarding" />

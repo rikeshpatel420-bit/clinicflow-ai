@@ -10,7 +10,7 @@ export type SmsRecoveryDraft = {
 export function createRecoverySmsDraft(input: { clinicName?: string | null; patientPhone?: string | null }) {
   const clinicName = input.clinicName?.trim() || "the clinic";
   return {
-    body: `Hi, thanks for calling ${clinicName}. Sorry we missed you. Reply YES and we’ll call you back.`,
+    body: `Hi, thanks for calling ${clinicName}. Sorry we missed you. Reply YES and we'll call you back.`,
     to: input.patientPhone ?? null,
   } satisfies SmsRecoveryDraft;
 }

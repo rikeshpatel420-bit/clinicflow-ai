@@ -7,9 +7,10 @@ import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { type TwilioWebhookPayload } from "@/lib/twilio/missed-call";
 import { hashPhoneNumber, normalizePhoneNumber } from "@/lib/twilio/crypto";
 import { deleteTwilioConnection, getTwilioConnectionForClinic, saveTwilioConnection, verifyTwilioConnection } from "@/lib/twilio/config";
-import { processTwilioCallWebhook } from "@/lib/twilio/recovery";
+import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "@/lib/twilio/recovery";
 import { createRecoverySmsDraft, sendRecoverySms } from "@/lib/twilio/sms";
 import { getCurrentUser } from "@/lib/supabase/server";
+import type { Call } from "@/types/database";
 
 function mustBeOwnerOrAdmin(role?: string | null) {
   return role === "owner" || role === "admin";
@@ -37,6 +38,42 @@ async function updateTwilioConnectionHealth(clinicId: string, userId: string, er
       updated_by: userId,
     })
     .eq("clinic_id", clinicId);
+}
+
+const DEMO_PATIENT_NUMBER = "07123 456789";
+
+function buildDemoCallSid(clinicId: string, tag: string) {
+  return `demo-${tag}-${clinicId.slice(0, 8)}-${Date.now().toString(36)}`;
+}
+
+function buildDemoMessageSid(clinicId: string, tag: string) {
+  return `demo-msg-${tag}-${clinicId.slice(0, 8)}-${Date.now().toString(36)}`;
+}
+
+async function getClinicTwilioConnection(clinicId: string) {
+  const { connection, error, tableMissing } = await getTwilioConnectionForClinic(clinicId);
+  if (error) {
+    return { connection: null, error };
+  }
+
+  if (tableMissing) {
+    return { connection: null, error: "Twilio connection table is not available yet." };
+  }
+
+  if (!connection) {
+    return { connection: null, error: "No Twilio connection found for this clinic." };
+  }
+
+  return { connection, error: null };
+}
+
+async function revalidateTwilioDemoPaths() {
+  revalidatePath("/integrations/twilio");
+  revalidatePath("/dashboard");
+  revalidatePath("/calls");
+  revalidatePath("/patients");
+  revalidatePath("/inbox");
+  revalidatePath("/ai");
 }
 
 export async function saveTwilioConfigAction(formData: FormData) {
@@ -255,4 +292,166 @@ export async function testTwilioCallRecoveryAction() {
   revalidatePath("/patients");
 
   redirect("/integrations/twilio?status=call-tested");
+}
+
+export async function simulateIncomingCallAction() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login?next=/integrations/twilio");
+  }
+
+  const membership = await getActiveClinicMembershipForUser(user);
+  if (!membership || !mustBeOwnerOrAdmin(membership.role)) {
+    redirect("/integrations/twilio?status=not-authorised");
+  }
+
+  const { connection, error } = await getClinicTwilioConnection(membership.clinic_id);
+  if (error || !connection) {
+    redirect("/integrations/twilio?status=demo-needs-connection");
+  }
+
+  const result = await processTwilioCallWebhook({
+    AnsweredBy: "human",
+    Body: "I'd like to know about treatment options and availability.",
+    CallDuration: "42",
+    CallSid: buildDemoCallSid(membership.clinic_id, "incoming"),
+    CallStatus: "in-progress",
+    Called: connection.voice_number,
+    Direction: "inbound",
+    From: DEMO_PATIENT_NUMBER,
+    MessageSid: "",
+    SmsStatus: "",
+    To: connection.voice_number,
+  });
+
+  if (!result.ok) {
+    redirect("/integrations/twilio?status=demo-error");
+  }
+
+  await revalidateTwilioDemoPaths();
+  redirect("/integrations/twilio?status=incoming-simulated");
+}
+
+export async function simulateMissedCallAction() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login?next=/integrations/twilio");
+  }
+
+  const membership = await getActiveClinicMembershipForUser(user);
+  if (!membership || !mustBeOwnerOrAdmin(membership.role)) {
+    redirect("/integrations/twilio?status=not-authorised");
+  }
+
+  const { connection, error } = await getClinicTwilioConnection(membership.clinic_id);
+  if (error || !connection) {
+    redirect("/integrations/twilio?status=demo-needs-connection");
+  }
+
+  const result = await processTwilioCallWebhook({
+    AnsweredBy: "",
+    Body: "",
+    CallDuration: "0",
+    CallSid: buildDemoCallSid(membership.clinic_id, "missed"),
+    CallStatus: "no-answer",
+    Called: connection.voice_number,
+    Direction: "inbound",
+    From: DEMO_PATIENT_NUMBER,
+    MessageSid: "",
+    SmsStatus: "",
+    To: connection.voice_number,
+  });
+
+  if (!result.ok) {
+    redirect("/integrations/twilio?status=demo-error");
+  }
+
+  await revalidateTwilioDemoPaths();
+  redirect("/integrations/twilio?status=missed-simulated");
+}
+
+export async function simulateSmsReplyAction() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login?next=/integrations/twilio");
+  }
+
+  const membership = await getActiveClinicMembershipForUser(user);
+  if (!membership || !mustBeOwnerOrAdmin(membership.role)) {
+    redirect("/integrations/twilio?status=not-authorised");
+  }
+
+  const { connection, error } = await getClinicTwilioConnection(membership.clinic_id);
+  if (error || !connection) {
+    redirect("/integrations/twilio?status=demo-needs-connection");
+  }
+
+  const result = await processTwilioSmsWebhook({
+    AnsweredBy: "",
+    Body: "YES please call me back today.",
+    CallDuration: "",
+    CallSid: buildDemoCallSid(membership.clinic_id, "reply"),
+    CallStatus: "",
+    Called: connection.voice_number,
+    Direction: "inbound",
+    From: DEMO_PATIENT_NUMBER,
+    MessageSid: buildDemoMessageSid(membership.clinic_id, "reply"),
+    SmsStatus: "received",
+    To: connection.voice_number,
+  });
+
+  if (!result.ok) {
+    if (result.error?.toLowerCase().includes("no recovery thread")) {
+      redirect("/integrations/twilio?status=demo-needs-missed-call");
+    }
+
+    redirect("/integrations/twilio?status=demo-error");
+  }
+
+  await revalidateTwilioDemoPaths();
+  redirect("/integrations/twilio?status=reply-simulated");
+}
+
+export async function generateTwilioAiSummaryAction() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login?next=/integrations/twilio");
+  }
+
+  const membership = await getActiveClinicMembershipForUser(user);
+  if (!membership || !mustBeOwnerOrAdmin(membership.role)) {
+    redirect("/integrations/twilio?status=not-authorised");
+  }
+
+  const { connection, error } = await getClinicTwilioConnection(membership.clinic_id);
+  if (error || !connection) {
+    redirect("/integrations/twilio?status=demo-needs-connection");
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data: call } = await admin
+    .from("calls")
+    .select("*")
+    .eq("clinic_id", membership.clinic_id)
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Call>();
+
+  if (!call) {
+    redirect("/integrations/twilio?status=demo-needs-call");
+  }
+
+  const summaryResult = await refreshCallReceptionSummary({
+    call,
+    clinicName: (await getClinicName(membership.clinic_id)) ?? "ClinicFlow clinic",
+    connection,
+  });
+
+  if (summaryResult.error) {
+    redirect("/integrations/twilio?status=demo-error");
+  }
+
+  await revalidateTwilioDemoPaths();
+  redirect("/integrations/twilio?status=summary-generated");
 }

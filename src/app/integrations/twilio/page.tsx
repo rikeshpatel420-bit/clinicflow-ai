@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { IntegrationShell } from "@/components/integrations/integration-shell";
+import { TwilioOperationsBoard } from "@/components/integrations/twilio-operations-board";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getTwilioSetupHealthForClinic } from "@/lib/twilio/health";
 import { maskAccountSid } from "@/lib/twilio/crypto";
+import { getTwilioOperationsDashboardData } from "@/lib/twilio/integration";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { deleteTwilioConfigAction, saveTwilioConfigAction, testTwilioCallRecoveryAction, testTwilioConfigAction, testTwilioSmsAction } from "./actions";
 
@@ -58,6 +60,7 @@ export default async function TwilioIntegrationPage({
     requestHeaders.get("x-forwarded-proto") ?? (forwardedHost && /localhost|127\.0\.0\.1/.test(forwardedHost) ? "http" : "https");
   const baseUrl = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null;
   const health = await getTwilioSetupHealthForClinic(membership.clinic_id, { baseUrl });
+  const operations = await getTwilioOperationsDashboardData(membership.clinic_id);
   const connection = health.connection;
   const canEdit = membership.role === "owner" || membership.role === "admin";
 
@@ -85,6 +88,12 @@ export default async function TwilioIntegrationPage({
       ) : health.connectionError ? (
         <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
           Twilio settings could not be loaded. {health.connectionError}
+        </section>
+      ) : null}
+
+      {operations.error ? (
+        <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
+          Twilio activity could not be loaded. {operations.error}
         </section>
       ) : null}
 
@@ -268,7 +277,7 @@ export default async function TwilioIntegrationPage({
             <div className="mt-4 grid gap-3 text-sm">
               {[
                 { label: "Incoming call", url: health.webhookUrls.voice, state: health.statuses.voiceWebhook },
-                { label: "Call status", url: health.webhookUrls.status, state: health.statuses.voiceWebhook },
+                { label: "Call status", url: health.webhookUrls.status, state: health.statuses.statusWebhook },
                 { label: "Incoming SMS", url: health.webhookUrls.sms, state: health.statuses.smsWebhook },
               ].map((item) => (
                 <div key={item.label} className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
@@ -316,6 +325,8 @@ export default async function TwilioIntegrationPage({
           </article>
         </div>
       </section>
+
+      <TwilioOperationsBoard data={operations} />
     </IntegrationShell>
   );
 }

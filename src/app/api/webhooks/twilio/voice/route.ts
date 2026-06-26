@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await processTwilioCallWebhook(payload);
-  const statusUrl = `${request.nextUrl.origin.replace(/\/$/, "")}/api/webhooks/twilio/status`;
+  const statusUrl = `${request.nextUrl.origin.replace(/\/$/, "")}/api/twilio/status`;
   const connection = connectionLookup.connection;
   const call = "call" in result ? result.call : null;
 

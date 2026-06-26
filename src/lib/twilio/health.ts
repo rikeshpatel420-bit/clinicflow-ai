@@ -23,6 +23,7 @@ export type TwilioSetupHealth = {
     authToken: "configured" | "missing";
     phoneNumber: "configured" | "missing";
     voiceWebhook: TwilioEndpointStatus;
+    statusWebhook: TwilioEndpointStatus;
     smsWebhook: TwilioEndpointStatus;
   };
   tableMissing: boolean;
@@ -41,9 +42,9 @@ function baseUrl(override?: string | null) {
 function buildWebhookUrls(override?: string | null) {
   const origin = baseUrl(override);
   return {
-    sms: `${origin}/api/webhooks/twilio/sms`,
-    status: `${origin}/api/webhooks/twilio/status`,
-    voice: `${origin}/api/webhooks/twilio/voice`,
+    sms: `${origin}/api/twilio/sms`,
+    status: `${origin}/api/twilio/status`,
+    voice: `${origin}/api/twilio/voice`,
   };
 }
 
@@ -98,6 +99,7 @@ export async function getTwilioSetupHealthForClinic(clinicId: string, options?: 
       phoneNumber: connection?.voice_number ? "configured" : "missing",
       smsWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: resolvedSiteUrlConfigured }),
       voiceWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: resolvedSiteUrlConfigured }),
+      statusWebhook: endpointStatus({ connectionConfigured: Boolean(connection), siteUrlConfigured: resolvedSiteUrlConfigured }),
     },
     tableMissing: connectionResult.tableMissing,
     webhookUrls: buildWebhookUrls(options?.baseUrl),
@@ -117,6 +119,7 @@ export function getTwilioPublicHealth(baseUrlOverride?: string | null) {
       siteUrlConfigured: resolvedSiteUrlConfigured,
     },
     statuses: {
+      statusWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: resolvedSiteUrlConfigured }),
       smsWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: resolvedSiteUrlConfigured }),
       voiceWebhook: endpointStatus({ connectionConfigured: connected, siteUrlConfigured: resolvedSiteUrlConfigured }),
     },

@@ -42,9 +42,9 @@ function baseUrl(override?: string | null) {
 function buildWebhookUrls(override?: string | null) {
   const origin = baseUrl(override);
   return {
-    sms: `${origin}/api/twilio/sms`,
-    status: `${origin}/api/twilio/status`,
-    voice: `${origin}/api/twilio/voice`,
+    sms: `${origin}/api/webhooks/twilio/sms`,
+    status: `${origin}/api/webhooks/twilio/status`,
+    voice: `${origin}/api/webhooks/twilio/voice`,
   };
 }
 

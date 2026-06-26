@@ -1,6 +1,8 @@
 export type BackendEnv = {
   cronSecret?: string;
   siteUrl: string;
+  openaiApiKey?: string;
+  openaiModel: string;
   stripeSecretKey?: string;
   stripeWebhookSecret?: string;
   supabaseAnonKey?: string;
@@ -19,6 +21,8 @@ export function getBackendEnv(): BackendEnv {
   return {
     cronSecret: process.env.CRON_SECRET,
     siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+    openaiApiKey: process.env.OPENAI_API_KEY,
+    openaiModel: process.env.OPENAI_MODEL ?? "gpt-5.5",
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

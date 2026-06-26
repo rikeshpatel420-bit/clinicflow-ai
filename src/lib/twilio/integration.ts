@@ -2,7 +2,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Call, CallRecording, CallTranscript, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { decryptConnectionAuthToken, getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber } from "./config";
 import { parseTwilioFormData, type TwilioWebhookPayload } from "./missed-call";
-import { processTwilioCallWebhook, processTwilioSmsWebhook } from "./recovery";
+import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "./recovery";
 import { verifyTwilioSignature } from "./verification";
 import type { NextRequest } from "next/server";
 
@@ -570,6 +570,21 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
     voicemailId: artifacts.voicemail?.id,
     transcriptId: artifacts.transcript?.id,
   });
+
+  const clinicName = await getClinicName(auth.connection.clinic_id);
+  const summaryRefresh = await refreshCallReceptionSummary({
+    call: followUpResult.call,
+    clinicName,
+    connection: auth.connection,
+    lead: null,
+  });
+
+  if (summaryRefresh.error) {
+    logTwilioError("voicemail_summary_failed", summaryRefresh.error, {
+      callSid: followUpResult.call.provider_call_id ?? auth.payload.CallSid,
+      clinicId: auth.connection.clinic_id,
+    });
+  }
 
   return new Response(
     `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Thanks. We have logged your voicemail.</Say></Response>`,

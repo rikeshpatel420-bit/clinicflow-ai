@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
+import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -43,6 +44,8 @@ export type PatientTimelineItem = {
 };
 
 export type PatientDetailData = PatientListData & {
+  aiSummary: CallReceptionSummary | null;
+  aiSummaryGeneratedAt: string | null;
   callCount: number;
   lead: PatientRecord | null;
   recommendedAction: string;
@@ -147,6 +150,52 @@ function leadToPatientRecord(lead: PatientLead): PatientRecord {
   };
 }
 
+function buildPatientDetailData(input: {
+  aiSummary: CallReceptionSummary | null;
+  aiSummaryGeneratedAt: string | null;
+  callCount: number;
+  lead: PatientRecord | null;
+  listData: PatientListData;
+  recommendedAction: string;
+  smsCount: number;
+  summary: PatientDetailData["summary"];
+  timeline: PatientTimelineItem[];
+  transcriptCount: number;
+  voicemailCount: number;
+  workflowCount: number;
+}): PatientDetailData {
+  return {
+    ...input.listData,
+    aiSummary: input.aiSummary,
+    aiSummaryGeneratedAt: input.aiSummaryGeneratedAt,
+    callCount: input.callCount,
+    lead: input.lead,
+    recommendedAction: input.recommendedAction,
+    smsCount: input.smsCount,
+    summary: input.summary,
+    timeline: input.timeline,
+    transcriptCount: input.transcriptCount,
+    voicemailCount: input.voicemailCount,
+    workflowCount: input.workflowCount,
+  };
+}
+
+function fallbackPatientSummary(lead: PatientRecord | null, recommendedAction: string): PatientDetailData["summary"] {
+  return {
+    appointmentRecommendation: "Appointment recommendation will appear once the patient is linked to a live call.",
+    clinicalNotes: "Clinical notes will appear once live data is available.",
+    emailRecommendation: "Email recommendation will appear once live data is available.",
+    followUpActions: ["Review the patient record."],
+    outstandingTasks: ["Link a call or recovery workflow."],
+    patientSummary: lead?.notes ?? "Patient summary pending.",
+    reasonForCalling: lead?.notes ?? "Reason for calling pending.",
+    receptionNotes: lead ? recommendedAction : "Reception notes pending.",
+    smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
+    treatmentRecommendation: "Reception callback",
+    urgencyScore: 0,
+  };
+}
+
 export function getDemoPatientListData(filters: PatientFilters = {}) {
   const normalizedFilters = normalizeFilters(filters);
 
@@ -206,60 +255,42 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
   const lead = listData.patients.find((item) => item.id === patientId) ?? null;
 
   if (!lead || listData.source !== "supabase" || !user || !listData.clinic) {
-    return {
-      ...listData,
+    const recommendedAction = lead ? "Review the patient lead details." : "Create or recover the patient lead first.";
+
+    return buildPatientDetailData({
+      aiSummary: null,
+      aiSummaryGeneratedAt: null,
       callCount: 0,
       lead,
-      recommendedAction: lead ? "Review the patient lead details." : "Create or recover the patient lead first.",
+      listData,
+      recommendedAction,
       smsCount: 0,
-      summary: {
-        appointmentRecommendation: "Appointment recommendation will appear once the patient is linked to a live call.",
-        clinicalNotes: "Clinical notes will appear once live data is available.",
-        emailRecommendation: "Email recommendation will appear once live data is available.",
-        followUpActions: ["Review the patient record."],
-        outstandingTasks: ["Link a call or recovery workflow."],
-        patientSummary: lead?.notes ?? "Patient summary pending.",
-        reasonForCalling: lead?.notes ?? "Reason for calling pending.",
-        receptionNotes: lead ? "Review the lead details and decide the next step." : "Reception notes pending.",
-        smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
-        treatmentRecommendation: "Reception callback",
-        urgencyScore: 0,
-      },
+      summary: fallbackPatientSummary(lead, recommendedAction),
       timeline: [],
       transcriptCount: 0,
       voicemailCount: 0,
       workflowCount: 0,
-    } satisfies PatientDetailData;
+    });
   }
 
   const supabase = await createSupabaseServerClient();
   const membership = await getActiveClinicMembershipForUser(user);
 
   if (!membership) {
-    return {
-      ...listData,
+    return buildPatientDetailData({
+      aiSummary: null,
+      aiSummaryGeneratedAt: null,
       callCount: 0,
       lead,
+      listData,
       recommendedAction: "Create or recover the patient lead first.",
       smsCount: 0,
-      summary: {
-        appointmentRecommendation: "Appointment recommendation will appear once the patient is linked to a live call.",
-        clinicalNotes: "Clinical notes will appear once live data is available.",
-        emailRecommendation: "Email recommendation will appear once live data is available.",
-        followUpActions: ["Review the patient record."],
-        outstandingTasks: ["Link a call or recovery workflow."],
-        patientSummary: lead?.notes ?? "Patient summary pending.",
-        reasonForCalling: lead?.notes ?? "Reason for calling pending.",
-        receptionNotes: lead ? "Review the lead details and decide the next step." : "Reception notes pending.",
-        smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
-        treatmentRecommendation: "Reception callback",
-        urgencyScore: 0,
-      },
+      summary: fallbackPatientSummary(lead, "Create or recover the patient lead first."),
       timeline: [],
       transcriptCount: 0,
       voicemailCount: 0,
       workflowCount: 0,
-    } satisfies PatientDetailData;
+    });
   }
 
   const [{ data: calls }, { data: smsEvents }, { data: workflows }] = await Promise.all([
@@ -296,6 +327,18 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
   const relatedWorkflows = workflows ?? [];
   const relatedCallIds = relatedCalls.map((call) => call.id);
 
+  const { data: aiSummaryLog } = await supabase
+    .from("ai_audit_logs")
+    .select("metadata,created_at")
+    .eq("clinic_id", membership.clinic_id)
+    .eq("lead_id", lead.id)
+    .eq("action", "summary_created")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ metadata: unknown; created_at: string }>();
+
+  const aiSummary = parseCallReceptionSummary(aiSummaryLog?.metadata ?? null);
+
   const [{ data: voicemails }, { data: transcripts }] = await Promise.all([
     relatedCallIds.length
       ? supabase
@@ -321,6 +364,18 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
 
   const relatedVoicemails = voicemails ?? [];
   const relatedTranscripts = transcripts ?? [];
+  const aiSummaryEvent: PatientTimelineItem[] = aiSummary
+    ? [
+        {
+          detail: aiSummary.receptionNotes,
+          id: `summary-${aiSummaryLog?.created_at ?? lead.id}`,
+          kind: "summary",
+          timestamp: aiSummaryLog?.created_at ?? lead.updated_at,
+          tone: aiSummary.urgencyScore >= 90 ? "warning" : "positive",
+          title: "OpenAI summary",
+        },
+      ]
+    : [];
 
   const timeline: PatientTimelineItem[] = [
     ...(relatedCalls.map((call): PatientTimelineItem => ({
@@ -380,58 +435,74 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
           },
         ]
       : []),
+    ...aiSummaryEvent,
   ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  return {
-    ...listData,
+  const recommendedAction =
+    aiSummary?.followUpRecommendation ??
+    (lead.status === "active"
+      ? "Confirm the appointment and keep the relationship warm."
+      : lead.status === "inactive"
+        ? "Respect the opt-out and close the thread."
+        : "Follow up with a staff-approved callback or SMS.");
+
+  const summary: PatientDetailData["summary"] = {
+    appointmentRecommendation:
+      aiSummary?.appointmentRecommendation ??
+      (lead.status === "active"
+        ? "Confirm the booking and keep the clinic handover calm."
+        : "Offer the first clinically appropriate appointment and check diary availability."),
+    clinicalNotes:
+      aiSummary?.clinicalSummary ??
+      (lead.source === "phone"
+        ? "Phone enquiry with potential clinical urgency; keep triage clear and concise."
+        : "Review the lead notes and decide whether a clinician should be involved."),
+    emailRecommendation:
+      lead.status === "inactive"
+        ? "Send a short follow-up email only if the patient explicitly prefers written communication."
+        : "Email confirmation can be used to reinforce the booking or callback.",
+    followUpActions: aiSummary
+      ? [
+          "Confirm the patient prefers call back, SMS, or booking link.",
+          aiSummary.followUpRecommendation,
+          "Mark the lead outcome once the patient responds.",
+        ]
+      : [
+          "Confirm the patient prefers call back, SMS, or booking link.",
+          "Review the diary for the next clinically appropriate slot.",
+          "Mark the lead outcome once the patient responds.",
+        ],
+    outstandingTasks: [
+      "Check for any emergency symptoms before routine follow-up.",
+      "Route to the right clinician if the treatment requires clinical input.",
+    ],
+    patientSummary: aiSummary?.patientSummary ?? lead.notes ?? lead.full_name,
+    reasonForCalling: lead.notes ?? "Patient lead enquiry summary.",
+    receptionNotes: aiSummary?.receptionNotes ?? recommendedActionForLead(lead),
+    smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
+    treatmentRecommendation:
+      aiSummary?.responseTone === "urgent_callback" || lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain")
+        ? "Urgent dental assessment"
+        : lead.source === "phone"
+          ? "Reception callback"
+          : "Routine consultation",
+    urgencyScore: aiSummary?.urgencyScore ?? (lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain") ? 94 : lead.status === "active" ? 78 : 72),
+  };
+
+  return buildPatientDetailData({
+    aiSummary,
+    aiSummaryGeneratedAt: aiSummaryLog?.created_at ?? null,
     callCount: relatedCalls.length,
     lead,
-    recommendedAction:
-      lead.status === "active"
-        ? "Confirm the appointment and keep the relationship warm."
-        : lead.status === "inactive"
-          ? "Respect the opt-out and close the thread."
-          : "Follow up with a staff-approved callback or SMS.",
+    listData,
+    recommendedAction,
     smsCount: relatedSms.length,
-    summary: {
-      appointmentRecommendation:
-        lead.status === "active"
-          ? "Confirm the booking and keep the clinic handover calm."
-          : "Offer the first clinically appropriate appointment and check diary availability.",
-      clinicalNotes:
-        lead.source === "phone"
-          ? "Phone enquiry with potential clinical urgency; keep triage clear and concise."
-          : "Review the lead notes and decide whether a clinician should be involved.",
-      emailRecommendation:
-        lead.status === "inactive"
-          ? "Send a short follow-up email only if the patient explicitly prefers written communication."
-          : "Email confirmation can be used to reinforce the booking or callback.",
-      followUpActions: [
-        "Confirm the patient prefers call back, SMS, or booking link.",
-        "Review the diary for the next clinically appropriate slot.",
-        "Mark the lead outcome once the patient responds.",
-      ],
-      outstandingTasks: [
-        "Check for any emergency symptoms before routine follow-up.",
-        "Route to the right clinician if the treatment requires clinical input.",
-      ],
-      patientSummary: lead.notes ?? lead.full_name,
-      reasonForCalling: lead.notes ?? "Patient lead enquiry summary.",
-      receptionNotes: recommendedActionForLead(lead),
-      smsRecommendation: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and we'll call you back.",
-      treatmentRecommendation:
-        lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain")
-          ? "Urgent dental assessment"
-          : lead.source === "phone"
-            ? "Reception callback"
-            : "Routine consultation",
-      urgencyScore: lead.notes?.toLowerCase().includes("emergency") || lead.notes?.toLowerCase().includes("pain") ? 94 : lead.status === "active" ? 78 : 72,
-    },
+    summary,
     timeline,
     transcriptCount: relatedTranscripts.length,
     voicemailCount: relatedVoicemails.length,
     workflowCount: relatedWorkflows.length,
-  } satisfies PatientDetailData;
+  });
 }
 
 function recommendedActionForLead(lead: PatientRecord) {

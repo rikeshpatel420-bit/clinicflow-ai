@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
+import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
 import { demoClinic } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -47,6 +48,8 @@ export type CallListData = {
 
 export type CallDetailData = CallListData & {
   call: CallRecord | null;
+  aiSummary: CallReceptionSummary | null;
+  aiSummaryGeneratedAt: string | null;
   lead: CallLead | null;
   recommendedAction: string;
   smsEvents: SmsEvent[];
@@ -209,6 +212,8 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
     return {
       ...listData,
       call,
+      aiSummary: null,
+      aiSummaryGeneratedAt: null,
       lead: null,
       recommendedAction: call ? "Review the call log and recovery notes." : "No call found.",
       smsEvents: [],
@@ -225,6 +230,8 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
     return {
       ...listData,
       call,
+      aiSummary: null,
+      aiSummaryGeneratedAt: null,
       lead: null,
       recommendedAction: "Review the call log and recovery notes.",
       smsEvents: [],
@@ -265,9 +272,23 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
       .maybeSingle<CallTranscript>(),
   ]);
 
+  const { data: aiSummaryLog } = await supabase
+    .from("ai_audit_logs")
+    .select("metadata,created_at")
+    .eq("clinic_id", membership.clinic_id)
+    .eq("call_id", call.id)
+    .eq("action", "summary_created")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ metadata: unknown; created_at: string }>();
+
+  const aiSummary = parseCallReceptionSummary(aiSummaryLog?.metadata ?? null);
+
   return {
     ...listData,
     call,
+    aiSummary,
+    aiSummaryGeneratedAt: aiSummaryLog?.created_at ?? null,
     lead: lead ?? null,
     recommendedAction:
       call.status === "missed"

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CommunicationsData } from "@/lib/communications/data";
 
 function formatDateTime(value: string | null) {
@@ -36,11 +36,37 @@ function threadPriorityTone(priority: string) {
 
 export function SmsConversationCentre({ data }: { data: CommunicationsData }) {
   const [query, setQuery] = useState("");
+  const [liveData, setLiveData] = useState(data);
   const [selectedId, setSelectedId] = useState(() => data.conversations[0]?.id ?? "");
+
+  useEffect(() => {
+    let mounted = true;
+
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/live/communications", { cache: "no-store" });
+        if (!response.ok) return;
+        const nextData = (await response.json()) as CommunicationsData;
+        if (mounted) {
+          setLiveData(nextData);
+        }
+      } catch {
+        // Keep the latest successful inbox snapshot visible if refresh fails.
+      }
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 8000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const value = query.trim().toLowerCase();
-    return data.conversations.filter((conversation) => {
+    return liveData.conversations.filter((conversation) => {
       if (!value) return true;
 
       const haystack = [
@@ -57,10 +83,10 @@ export function SmsConversationCentre({ data }: { data: CommunicationsData }) {
 
       return haystack.includes(value);
     });
-  }, [data.conversations, query]);
+  }, [liveData.conversations, query]);
 
   const selectedConversation = filtered.find((conversation) => conversation.id === selectedId) ?? filtered[0] ?? null;
-  const selectedMessages = selectedConversation ? data.messages.filter((message) => message.conversation_id === selectedConversation.id) : [];
+  const selectedMessages = selectedConversation ? liveData.messages.filter((message) => message.conversation_id === selectedConversation.id) : [];
 
   return (
     <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">

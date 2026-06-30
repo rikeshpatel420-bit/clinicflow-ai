@@ -77,11 +77,34 @@ function logTwilioValidationDebug(details: Record<string, unknown>) {
   console.info("[ClinicFlow Twilio]", "signature_validation_debug", JSON.stringify(details));
 }
 
+function isTrustworthyProductionOrigin(origin?: string | null) {
+  if (!origin) {
+    return false;
+  }
+
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return false;
+    }
+
+    if (hostname.endsWith(".vercel.app")) {
+      return false;
+    }
+
+    return Boolean(url.protocol === "https:" || url.protocol === "http:");
+  } catch {
+    return false;
+  }
+}
+
 export function resolveTwilioPublicOrigin(request: NextRequest) {
   const env = getBackendEnv();
   const productionSiteUrl = env.siteUrl?.trim();
   const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
-  if (isProduction && productionSiteUrl) {
+  if (isProduction && isTrustworthyProductionOrigin(productionSiteUrl)) {
     return new URL(productionSiteUrl).origin.replace(/\/$/, "");
   }
 
@@ -126,12 +149,9 @@ export async function verifyTwilioSignature(
   const hostHeader = firstHeaderValue(request.headers.get("host"));
   const forwardedHost = firstHeaderValue(request.headers.get("x-forwarded-host"));
   const forwardedProto = firstHeaderValue(request.headers.get("x-forwarded-proto"));
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
   const validationUrlSource: TwilioVerificationDiagnostics["validationUrlSource"] =
-    process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production"
-      ? "production-site-url"
-      : forwardedHost
-        ? "forwarded-headers"
-        : "request-url";
+    isProduction && isTrustworthyProductionOrigin(env.siteUrl) ? "production-site-url" : forwardedHost ? "forwarded-headers" : "request-url";
 
   const resolvedPublicUrl = buildTwilioValidationUrl(request);
   const diagnosticsBase = {

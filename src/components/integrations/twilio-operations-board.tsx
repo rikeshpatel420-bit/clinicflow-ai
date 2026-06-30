@@ -23,8 +23,28 @@ function summaryCards(data: TwilioOperationsDashboardData) {
 }
 
 export function TwilioOperationsBoard({ data }: { data: TwilioOperationsDashboardData }) {
+  const hasAnyActivity =
+    data.activeCalls.length > 0 ||
+    data.recentCalls.length > 0 ||
+    data.missedCalls.length > 0 ||
+    data.smsConversations.length > 0 ||
+    data.voicemails.length > 0 ||
+    data.recordings.length > 0 ||
+    data.transcripts.length > 0;
+
   return (
     <section className="grid gap-6">
+      {!hasAnyActivity ? (
+        <section className="rounded-[20px] border border-[#dce6e3] bg-white p-4 text-sm text-[#65736f] shadow-sm">
+          <p className="font-semibold text-[#10201d]">No activity yet</p>
+          <p className="mt-1">
+            {data.warnings.length > 0
+              ? "The production schema is still missing one or more of call_recordings, voicemail_messages, or call_transcripts. Empty states are shown until the media migration is applied."
+              : "Calls, SMS replies, voicemails, and transcripts will appear here once Twilio traffic starts flowing."}
+          </p>
+        </section>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryCards(data).map((item) => (
           <article key={item.label} className="rounded-[24px] border border-[#dce6e3] bg-white p-5 shadow-sm">

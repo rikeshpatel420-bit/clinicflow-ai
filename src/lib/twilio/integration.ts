@@ -904,8 +904,15 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
   );
 }
 
-function isMissingRelationError(error: { message?: string } | null | undefined) {
-  return Boolean(error?.message?.toLowerCase().includes("does not exist") || error?.message?.toLowerCase().includes("relation"));
+function isMissingRelationError(error: { code?: string | null; message?: string } | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+  return (
+    error?.code === "PGRST205" ||
+    message.includes("schema cache") ||
+    message.includes("could not find the table") ||
+    message.includes("does not exist") ||
+    message.includes("relation")
+  );
 }
 
 function formatVoicemailLabel(voicemail: VoicemailMessage) {
@@ -919,6 +926,7 @@ function formatSmsConversationLabel(event: SmsEvent) {
 export async function getTwilioOperationsDashboardData(clinicId: string): Promise<TwilioOperationsDashboardData> {
   const admin = createSupabaseAdminClient();
   const warnings: string[] = [];
+  const fatalErrors: string[] = [];
 
   const [
     { data: activeCalls, error: activeCallsError },
@@ -943,6 +951,8 @@ export async function getTwilioOperationsDashboardData(clinicId: string): Promis
     for (const error of errors) {
       if (isMissingRelationError(error)) {
         warnings.push(error?.message ?? "Missing Twilio media table.");
+      } else {
+        fatalErrors.push(error?.message ?? "Some Twilio dashboard tables could not be loaded.");
       }
     }
   }
@@ -957,10 +967,7 @@ export async function getTwilioOperationsDashboardData(clinicId: string): Promis
 
   return {
     activeCalls: activeCallList,
-    error:
-      errors.length > cleanWarnings.length
-        ? "Some Twilio dashboard tables could not be loaded."
-        : null,
+    error: fatalErrors[0] ?? null,
     missedCalls: missedCallList,
     recordings: recordingList,
     recentCalls: recentCalls ?? [],

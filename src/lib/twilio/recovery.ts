@@ -467,9 +467,13 @@ async function ensureSmsRecovery(input: {
   return { smsEvent: data ?? null, error: error?.message ?? null };
 }
 
-function classifyReplyBody(body: string) {
+type SmsReplyState = "replied" | "booked" | "recovered" | "opted_out" | "resubscribed" | "help";
+
+function classifyReplyBody(body: string): SmsReplyState {
   const normalized = body.trim().toLowerCase();
   if (!normalized) return "replied" as const;
+  if (/(?:^|\b)(help|support|info|questions?|question|assist|assistance)(?:\b|$)/.test(normalized)) return "help" as const;
+  if (/(?:^|\b)(start|resume|unstop|restart|resubscribe)(?:\b|$)/.test(normalized)) return "resubscribed" as const;
   // Treat common opt-out phrases as a hard stop so recovery state, calls, and leads stay aligned.
   if (/(?:^|\b)(stop|unsubscribe|opt out|opt-out|cancel|decline|no thanks|not now)(?:\b|$)/.test(normalized)) return "opted_out" as const;
   if (/(?:^|\b)(book|booked|appointment|slot)(?:\b|$)/.test(normalized)) return "booked" as const;
@@ -477,31 +481,34 @@ function classifyReplyBody(body: string) {
   return "replied" as const;
 }
 
-function replyStateToWorkflowState(replyState: "replied" | "booked" | "recovered" | "opted_out"): RecoveryWorkflow["state"] {
+function replyStateToWorkflowState(replyState: SmsReplyState): RecoveryWorkflow["state"] {
   if (replyState === "opted_out") return "opted_out";
   if (replyState === "recovered") return "recovered";
   if (replyState === "booked") return "booked";
   return "replied";
 }
 
-function replyStateToCallRecoveryStatus(replyState: "replied" | "booked" | "recovered" | "opted_out"): Call["recovery_status"] {
+function replyStateToCallRecoveryStatus(replyState: SmsReplyState): Call["recovery_status"] {
   if (replyState === "booked") return "booked";
   if (replyState === "recovered") return "recovered";
   if (replyState === "opted_out") return "lost";
   return "replied";
 }
 
-function replyStateToLeadStatus(replyState: "replied" | "booked" | "recovered" | "opted_out", currentStatus: PatientLead["status"]) {
+function replyStateToLeadStatus(replyState: SmsReplyState, currentStatus: PatientLead["status"]) {
   if (replyState === "booked") return "booked" as const;
   if (replyState === "recovered") return "recovered" as const;
   if (replyState === "opted_out") return "opted_out" as const;
+  if (replyState === "resubscribed" && currentStatus === "opted_out") return "contacted" as const;
   return currentStatus;
 }
 
-function replyStateToNextAction(replyState: "replied" | "booked" | "recovered" | "opted_out") {
+function replyStateToNextAction(replyState: SmsReplyState) {
   if (replyState === "booked") return "Lead booked. Update the schedule and close the loop.";
   if (replyState === "recovered") return "Lead recovered. Call back and confirm the next step.";
   if (replyState === "opted_out") return "Patient opted out of SMS recovery.";
+  if (replyState === "resubscribed") return "Patient resubscribed. Resume the recovery thread.";
+  if (replyState === "help") return "Patient requested help. Review the thread and reply appropriately.";
   return "Awaiting staff follow-up.";
 }
 
@@ -510,7 +517,7 @@ async function updateCallAndLeadFromReply(input: {
   clinicId: string;
   lead: PatientLead | null;
   workflow: RecoveryWorkflow;
-  replyState: "replied" | "booked" | "recovered" | "opted_out";
+  replyState: SmsReplyState;
 }) {
   const admin = createSupabaseAdminClient();
   const now = new Date().toISOString();
@@ -548,6 +555,8 @@ async function updateCallAndLeadFromReply(input: {
             ? "Patient opted out of SMS recovery."
             : input.replyState === "booked"
               ? null
+              : input.replyState === "resubscribed"
+                ? null
               : input.lead.loss_reason,
         status: replyStateToLeadStatus(input.replyState, input.lead.status),
         updated_at: now,
@@ -555,6 +564,119 @@ async function updateCallAndLeadFromReply(input: {
       .eq("id", input.lead.id)
       .eq("clinic_id", input.clinicId);
   }
+}
+
+async function findSmsRecoveryThread(input: {
+  clinicId: string;
+  incomingNumberHash: string;
+}) {
+  const admin = createSupabaseAdminClient();
+
+  const { data: latestOutbound, error: outboundError } = await admin
+    .from("sms_events")
+    .select("*")
+    .eq("clinic_id", input.clinicId)
+    .eq("direction", "outbound")
+    .eq("to_number_hash", input.incomingNumberHash)
+    .order("occurred_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<SmsEvent>();
+
+  if (outboundError) {
+    return { call: null as Call | null, error: outboundError.message, lead: null as PatientLead | null, latestOutbound: null as SmsEvent | null, workflow: null as RecoveryWorkflow | null };
+  }
+
+  if (latestOutbound) {
+    const [{ data: call, error: callError }, { data: workflow, error: workflowError }, { data: lead, error: leadError }] = await Promise.all([
+      admin
+        .from("calls")
+        .select("*")
+        .eq("clinic_id", input.clinicId)
+        .eq("id", latestOutbound.call_id ?? "")
+        .maybeSingle<Call>(),
+      admin
+        .from("recovery_workflows")
+        .select("*")
+        .eq("clinic_id", input.clinicId)
+        .eq("id", latestOutbound.recovery_workflow_id ?? "")
+        .maybeSingle<RecoveryWorkflow>(),
+      latestOutbound.lead_id
+        ? admin
+            .from("patient_leads")
+            .select("*")
+            .eq("clinic_id", input.clinicId)
+            .eq("id", latestOutbound.lead_id)
+            .maybeSingle<PatientLead>()
+        : Promise.resolve({ data: null as PatientLead | null, error: null as { message: string } | null }),
+    ]);
+
+    if (callError) return { call: null, error: callError.message, lead: null, latestOutbound, workflow: null };
+    if (workflowError) {
+      logTwilioError("sms_workflow_lookup_failed", workflowError.message, {
+        clinicId: input.clinicId,
+        inboundThread: latestOutbound.id,
+      });
+    }
+    if (leadError) {
+      logTwilioError("sms_lead_lookup_failed", leadError.message, {
+        clinicId: input.clinicId,
+        inboundThread: latestOutbound.id,
+      });
+    }
+
+    return { call: call ?? null, error: null, lead: lead ?? null, latestOutbound, workflow: workflow ?? null };
+  }
+
+  const { data: recentCall, error: callError } = await admin
+    .from("calls")
+    .select("*")
+    .eq("clinic_id", input.clinicId)
+    .eq("caller_number_hash", input.incomingNumberHash)
+    .is("deleted_at", null)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Call>();
+
+  if (callError) {
+    return { call: null, error: callError.message, lead: null, latestOutbound: null, workflow: null };
+  }
+
+  if (!recentCall) {
+    return { call: null, error: null, lead: null, latestOutbound: null, workflow: null };
+  }
+
+  const { data: workflow, error: workflowError } = await admin
+    .from("recovery_workflows")
+    .select("*")
+    .eq("clinic_id", input.clinicId)
+    .eq("call_id", recentCall.id)
+    .is("deleted_at", null)
+    .maybeSingle<RecoveryWorkflow>();
+
+  if (workflowError) {
+    logTwilioError("sms_workflow_lookup_failed", workflowError.message, {
+      clinicId: input.clinicId,
+      callId: recentCall.id,
+    });
+  }
+
+  const { data: lead, error: leadError } = recentCall.lead_id
+    ? await admin
+        .from("patient_leads")
+        .select("*")
+        .eq("clinic_id", input.clinicId)
+        .eq("id", recentCall.lead_id)
+        .maybeSingle<PatientLead>()
+    : { data: null as PatientLead | null, error: null as { message: string } | null };
+
+  if (leadError) {
+    logTwilioError("sms_lead_lookup_failed", leadError.message, {
+      clinicId: input.clinicId,
+      callId: recentCall.id,
+    });
+  }
+
+  return { call: recentCall, error: null, lead: lead ?? null, latestOutbound: null, workflow: workflow ?? null };
 }
 
 export async function refreshCallReceptionSummary(input: {
@@ -632,6 +754,20 @@ export async function refreshCallReceptionSummary(input: {
   });
 
   if (auditError) {
+    await admin.from("audit_events").insert({
+      actor_user_id: input.connection.created_by,
+      clinic_id: input.connection.clinic_id,
+      entity_id: input.call.id,
+      entity_table: "ai_audit_logs",
+      event_type: "twilio.summary_audit_failed",
+      metadata: {
+        call_id: input.call.id,
+        clinic_id: input.connection.clinic_id,
+        error: auditError.message,
+        lead_id: lead?.id ?? input.call.lead_id ?? null,
+      },
+      risk_level: "medium",
+    });
     return { error: auditError.message, summary };
   }
 
@@ -835,84 +971,34 @@ export async function processTwilioSmsWebhook(payload: TwilioWebhookPayload) {
     return { error: "No active Twilio connection found for this number.", ok: false };
   }
 
-  const { data: latestOutbound, error: outboundError } = await admin
-    .from("sms_events")
-    .select("*")
-    .eq("clinic_id", connection.clinic_id)
-    .eq("direction", "outbound")
-    .eq("to_number_hash", incomingNumberHash)
-    .order("occurred_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<SmsEvent>();
-
-  if (outboundError) {
-    return { error: outboundError.message, ok: false };
-  }
-
-  if (!latestOutbound) {
-    return { error: "No recovery thread found for this reply.", ok: false };
-  }
-
-  const { data: call, error: callError } = await admin
-    .from("calls")
-    .select("*")
-    .eq("clinic_id", connection.clinic_id)
-    .eq("id", latestOutbound.call_id ?? "")
-    .maybeSingle<Call>();
-
-  if (callError) {
-    return { error: callError.message, ok: false };
-  }
-
-  if (!call) {
-    return { error: "Linked call record is missing.", ok: false };
-  }
-
-  const { data: workflow, error: workflowError } = await admin
-    .from("recovery_workflows")
-    .select("*")
-    .eq("clinic_id", connection.clinic_id)
-    .eq("id", latestOutbound.recovery_workflow_id ?? "")
-    .maybeSingle<RecoveryWorkflow>();
-
-  if (workflowError) {
-    return { error: workflowError.message, ok: false };
-  }
-
-  if (!workflow) {
-    return { error: "Linked recovery workflow is missing.", ok: false };
-  }
-
-  let lead: PatientLead | null = null;
-  if (latestOutbound.lead_id) {
-    const { data, error: leadError } = await admin
-      .from("patient_leads")
-      .select("*")
-      .eq("clinic_id", connection.clinic_id)
-      .eq("id", latestOutbound.lead_id)
-      .maybeSingle<PatientLead>();
-
-    if (leadError) {
-      return { error: leadError.message, ok: false };
-    }
-
-    lead = data ?? null;
-  }
-
   const replyState = classifyReplyBody(payload.Body ?? "");
+  const thread = await findSmsRecoveryThread({
+    clinicId: connection.clinic_id,
+    incomingNumberHash,
+  });
+
+  if (thread.error) {
+    return { error: thread.error, ok: false };
+  }
+
+  const call = thread.call;
+  const workflow = thread.workflow;
+  const lead = thread.lead;
+
   const { error: inboundSmsError } = await admin
     .from("sms_events")
     .insert({
       body_preview: payload.Body?.slice(0, 500) || "Inbound reply",
-      call_id: call.id,
+      call_id: call?.id ?? null,
       clinic_id: connection.clinic_id,
       direction: "inbound",
       from_number_hash: hashPhoneNumber(incomingNumber),
-      lead_id: lead?.id ?? latestOutbound.lead_id,
+      lead_id: lead?.id ?? thread.latestOutbound?.lead_id ?? null,
+      error_message: call || thread.latestOutbound ? null : "No matching recovery thread was found for this inbound SMS.",
       occurred_at: new Date().toISOString(),
       provider: "twilio",
-      provider_message_id: payload.MessageSid || `reply-${call.provider_call_id ?? call.id}`,
-      recovery_workflow_id: workflow.id,
+      provider_message_id: payload.MessageSid || `reply-${call?.provider_call_id ?? call?.id ?? incomingNumberHash}`,
+      recovery_workflow_id: workflow?.id ?? thread.latestOutbound?.recovery_workflow_id ?? null,
       status: "received",
       to_number_hash: hashPhoneNumber(clinicNumber),
       to_number_last4: clinicNumber.slice(-4),
@@ -922,28 +1008,39 @@ export async function processTwilioSmsWebhook(payload: TwilioWebhookPayload) {
     return { error: inboundSmsError.message, ok: false };
   }
 
-  await updateCallAndLeadFromReply({
-    call,
-    clinicId: connection.clinic_id,
-    lead: lead ?? null,
-    replyState,
-    workflow,
-  });
+  if (call && workflow) {
+    await updateCallAndLeadFromReply({
+      call,
+      clinicId: connection.clinic_id,
+      lead: lead ?? null,
+      replyState,
+      workflow,
+    });
+  } else {
+    logTwilioError("sms_thread_missing", "Inbound SMS did not match a recoverable thread.", {
+      clinicId: connection.clinic_id,
+      fromNumberHash: incomingNumberHash,
+      messageSid: payload.MessageSid,
+      replyState,
+    });
+  }
 
   const clinicName = await getClinicName(connection.clinic_id);
-  const aiSummaryResult = await refreshCallReceptionSummary({
-    call,
-    clinicName: clinicName ?? "ClinicFlow clinic",
-    connection,
-    lead,
-  });
+  if (call) {
+    const aiSummaryResult = await refreshCallReceptionSummary({
+      call,
+      clinicName: clinicName ?? "ClinicFlow clinic",
+      connection,
+      lead,
+    });
 
-  if (aiSummaryResult.error) {
-    console.error("[ClinicFlow Twilio]", "summary_refresh_failed", JSON.stringify({
-      callSid: call.provider_call_id ?? call.id,
-      clinicId: connection.clinic_id,
-      error: aiSummaryResult.error,
-    }));
+    if (aiSummaryResult.error) {
+      console.error("[ClinicFlow Twilio]", "summary_refresh_failed", JSON.stringify({
+        callSid: call.provider_call_id ?? call.id,
+        clinicId: connection.clinic_id,
+        error: aiSummaryResult.error,
+      }));
+    }
   }
 
   return {

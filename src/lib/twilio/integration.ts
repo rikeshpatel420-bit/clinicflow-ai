@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, CallRecording, CallTranscript, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { Call, CallRecording, CallTranscript, Json, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { decryptConnectionAuthToken, getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber } from "./config";
 import { parseTwilioFormData, type TwilioWebhookPayload } from "./missed-call";
 import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "./recovery";
@@ -86,6 +86,47 @@ function logTwilioEvent(event: string, details: Record<string, unknown>) {
 
 function logTwilioError(event: string, error: unknown, details: Record<string, unknown> = {}) {
   console.error("[ClinicFlow Twilio]", event, JSON.stringify({ ...details, error: error instanceof Error ? error.message : String(error) }));
+}
+
+async function recordWebhookEvent(input: {
+  clinicId: string | null;
+  errorMessage?: string | null;
+  eventType: string;
+  idempotencyKey: string | null;
+  processedAt?: string | null;
+  payload: Json;
+  processingStatus: "received" | "processed" | "ignored" | "failed";
+  providerEventId: string | null;
+  receivedAt: string;
+}) {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("webhook_events")
+    .upsert(
+      {
+        clinic_id: input.clinicId,
+        error_message: input.errorMessage ?? null,
+        event_type: input.eventType,
+        idempotency_key: input.idempotencyKey,
+        payload: input.payload,
+        processed_at: input.processedAt ?? null,
+        processing_status: input.processingStatus,
+        provider: "twilio",
+        provider_event_id: input.providerEventId,
+        received_at: input.receivedAt,
+      },
+      { onConflict: "provider,idempotency_key" },
+    );
+
+  if (error) {
+    logTwilioError("webhook_event_record_failed", error, {
+      clinicId: input.clinicId,
+      eventType: input.eventType,
+      idempotencyKey: input.idempotencyKey,
+      processingStatus: input.processingStatus,
+      providerEventId: input.providerEventId,
+    });
+  }
 }
 
 async function resolveTwilioConnection(payload: TwilioExtendedWebhookPayload) {
@@ -325,11 +366,33 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
   }
 
   const { connection, payload, testMode } = auth;
+  const receivedAt = new Date().toISOString();
+  const eventId = payload.CallSid || payload.MessageSid || payload.RecordingSid || `voice-${connection.clinic_id}-${Date.now().toString(36)}`;
+  await recordWebhookEvent({
+    clinicId: connection.clinic_id,
+    eventType: "twilio.voice.received",
+    idempotencyKey: eventId,
+    payload,
+    processingStatus: "received",
+    providerEventId: payload.CallSid ?? null,
+    receivedAt,
+  });
   const result = await processTwilioCallWebhook(payload);
   if (!result.ok || !("call" in result) || !result.call) {
     logTwilioError("voice_failed", result.error ?? "Twilio voice webhook failed", {
       callSid: payload.CallSid,
       clinicId: connection.clinic_id,
+    });
+    await recordWebhookEvent({
+      clinicId: connection.clinic_id,
+      errorMessage: result.error ?? "Twilio voice webhook failed",
+      eventType: "twilio.voice.failed",
+      idempotencyKey: eventId,
+      payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: payload.CallSid ?? null,
+      receivedAt,
     });
     return buildWebhookErrorResponse(result.error ?? "Twilio voice webhook failed.", testMode ? 200 : 500);
   }
@@ -344,6 +407,16 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     hasSpeech: Boolean(payload.SpeechResult?.trim()),
     hasDigits: Boolean(payload.Digits?.trim()),
     status: result.call.status,
+  });
+  await recordWebhookEvent({
+    clinicId: connection.clinic_id,
+    eventType: "twilio.voice.processed",
+    idempotencyKey: eventId,
+    payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: payload.CallSid ?? null,
+    receivedAt,
   });
 
   if (payload.Digits?.trim() === "1") {
@@ -372,6 +445,17 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     });
 
     if (transcriptResult.error) {
+      await recordWebhookEvent({
+        clinicId: connection.clinic_id,
+        errorMessage: transcriptResult.error,
+        eventType: "twilio.voice.failed",
+        idempotencyKey: eventId,
+        payload,
+        processingStatus: "failed",
+        processedAt: new Date().toISOString(),
+        providerEventId: payload.CallSid ?? null,
+        receivedAt,
+      });
       return buildWebhookErrorResponse(transcriptResult.error, testMode ? 200 : 500);
     }
 
@@ -408,11 +492,34 @@ export async function handleTwilioStatusWebhook(request: NextRequest) {
     return auth.errorResponse;
   }
 
+  const receivedAt = new Date().toISOString();
+  const eventId = auth.payload.CallSid || auth.payload.MessageSid || `status-${auth.connection.clinic_id}-${Date.now().toString(36)}`;
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.status.received",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "received",
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
+  });
+
   const result = await processTwilioCallWebhook(auth.payload);
   if (!result.ok || !("call" in result) || !result.call) {
     logTwilioError("status_failed", result.error ?? "Twilio status webhook failed", {
       callSid: auth.payload.CallSid,
       clinicId: auth.connection.clinic_id,
+    });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: result.error ?? "Twilio status webhook failed",
+      eventType: "twilio.status.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
     });
     return buildWebhookErrorResponse(result.error ?? "Twilio status webhook failed.", auth.testMode ? 200 : 500);
   }
@@ -422,6 +529,16 @@ export async function handleTwilioStatusWebhook(request: NextRequest) {
     clinicId: auth.connection.clinic_id,
     recoveryStatus: result.call.recovery_status,
     status: result.call.status,
+  });
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.status.processed",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
   });
 
   return Response.json(
@@ -444,6 +561,18 @@ export async function handleTwilioMissedCallWebhook(request: NextRequest) {
     return auth.errorResponse;
   }
 
+  const receivedAt = new Date().toISOString();
+  const eventId = auth.payload.CallSid || `missed-call-${auth.connection.clinic_id}-${Date.now().toString(36)}`;
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.missed_call.received",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "received",
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
+  });
+
   const result = await processTwilioCallWebhook({
     ...auth.payload,
     AnsweredBy: auth.payload.AnsweredBy || "",
@@ -455,6 +584,17 @@ export async function handleTwilioMissedCallWebhook(request: NextRequest) {
       callSid: auth.payload.CallSid,
       clinicId: auth.connection.clinic_id,
     });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: result.error ?? "Twilio missed-call webhook failed",
+      eventType: "twilio.missed_call.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
     return buildWebhookErrorResponse(result.error ?? "Twilio missed-call webhook failed.", auth.testMode ? 200 : 500);
   }
 
@@ -463,6 +603,16 @@ export async function handleTwilioMissedCallWebhook(request: NextRequest) {
     clinicId: auth.connection.clinic_id,
     recoveryStatus: result.call.recovery_status,
     status: result.call.status,
+  });
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.missed_call.processed",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
   });
 
   return Response.json(
@@ -484,11 +634,34 @@ export async function handleTwilioSmsWebhook(request: NextRequest) {
     return auth.errorResponse;
   }
 
+  const receivedAt = new Date().toISOString();
+  const eventId = auth.payload.MessageSid || `sms-${auth.connection.clinic_id}-${Date.now().toString(36)}`;
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.sms.received",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "received",
+    providerEventId: auth.payload.MessageSid ?? null,
+    receivedAt,
+  });
+
   const result = await processTwilioSmsWebhook(auth.payload);
   if (!result.ok) {
     logTwilioError("sms_failed", result.error ?? "Twilio SMS webhook failed", {
       clinicId: auth.connection.clinic_id,
       messageSid: auth.payload.MessageSid,
+    });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: result.error ?? "Twilio SMS webhook failed",
+      eventType: "twilio.sms.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.MessageSid ?? null,
+      receivedAt,
     });
     return buildWebhookErrorResponse(result.error ?? "Twilio SMS webhook failed.", auth.testMode ? 200 : 500);
   }
@@ -497,6 +670,16 @@ export async function handleTwilioSmsWebhook(request: NextRequest) {
     clinicId: auth.connection.clinic_id,
     messageSid: auth.payload.MessageSid,
     replyState: result.replyState,
+  });
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.sms.processed",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: auth.payload.MessageSid ?? null,
+    receivedAt,
   });
 
   return Response.json(
@@ -518,12 +701,34 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
     return auth.errorResponse;
   }
 
+  const receivedAt = new Date().toISOString();
+  const eventId = auth.payload.RecordingSid || auth.payload.CallSid || `voicemail-${auth.connection.clinic_id}-${Date.now().toString(36)}`;
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.voicemail.received",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "received",
+    providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
+    receivedAt,
+  });
+
   const hasRecording = Boolean(auth.payload.RecordingSid?.trim() && auth.payload.RecordingUrl?.trim());
 
   if (!hasRecording) {
     const voiceUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voice`;
     const voicemailUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voicemail`;
     const clinicName = await getClinicName(auth.connection.clinic_id);
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voicemail.processed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "processed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
+      receivedAt,
+    });
 
     return new Response(
       buildVoicemailPromptTwiml({
@@ -547,6 +752,17 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
       callSid: auth.payload.CallSid,
       clinicId: auth.connection.clinic_id,
     });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: followUpResult.error ?? "Unable to persist voicemail call context",
+      eventType: "twilio.voicemail.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
+      receivedAt,
+    });
     return buildWebhookErrorResponse(followUpResult.error ?? "Unable to persist voicemail call context.", auth.testMode ? 200 : 500);
   }
 
@@ -561,6 +777,17 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
       callSid: auth.payload.CallSid,
       clinicId: auth.connection.clinic_id,
     });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: artifacts.error,
+      eventType: "twilio.voicemail.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
+      receivedAt,
+    });
     return buildWebhookErrorResponse(artifacts.error, auth.testMode ? 200 : 500);
   }
 
@@ -569,6 +796,16 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
     callSid: followUpResult.call.provider_call_id ?? auth.payload.CallSid,
     voicemailId: artifacts.voicemail?.id,
     transcriptId: artifacts.transcript?.id,
+  });
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.voicemail.processed",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
+    receivedAt,
   });
 
   const clinicName = await getClinicName(auth.connection.clinic_id);

@@ -1101,6 +1101,48 @@ export type Database = {
         };
         Relationships: [];
       };
+      webhook_events: {
+        Row: {
+          id: string;
+          provider: "twilio" | "stripe" | "supabase" | "internal";
+          provider_event_id: string | null;
+          clinic_id: string | null;
+          event_type: string;
+          processing_status: "received" | "processed" | "ignored" | "failed";
+          idempotency_key: string | null;
+          payload: Json;
+          error_message: string | null;
+          received_at: string;
+          processed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          provider: "twilio" | "stripe" | "supabase" | "internal";
+          provider_event_id?: string | null;
+          clinic_id?: string | null;
+          event_type: string;
+          processing_status?: "received" | "processed" | "ignored" | "failed";
+          idempotency_key?: string | null;
+          payload?: Json;
+          error_message?: string | null;
+          received_at?: string;
+          processed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          provider?: "twilio" | "stripe" | "supabase" | "internal";
+          provider_event_id?: string | null;
+          clinic_id?: string | null;
+          event_type?: string;
+          processing_status?: "received" | "processed" | "ignored" | "failed";
+          idempotency_key?: string | null;
+          payload?: Json;
+          error_message?: string | null;
+          received_at?: string;
+          processed_at?: string | null;
+        };
+        Relationships: [];
+      };
       audit_events: {
         Row: {
           id: string;

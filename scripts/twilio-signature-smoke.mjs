@@ -21,7 +21,7 @@ function buildTwilioValidationUrl(url, headers) {
 function buildTwilioSignaturePayload(url, formData) {
   if (!formData) return url;
   const params = Array.from(formData.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, value]) => `${key}${String(value)}`)
     .join("");
   return `${url}${params}`;

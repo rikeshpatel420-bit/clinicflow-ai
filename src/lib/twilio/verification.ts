@@ -9,10 +9,18 @@ export type TwilioAuthTokenSource = "clinic-row" | "environment" | "missing";
 export type TwilioVerificationDiagnostics = {
   authTokenDecrypted: boolean;
   authTokenSource: TwilioAuthTokenSource;
+  forwardedHost: string | null;
+  forwardedProto: string | null;
+  hostHeader: string | null;
+  parameterCount: number;
   requestPath: string;
+  requestUrl: string;
   resolvedPublicUrl: string;
   signatureHeaderExists: boolean;
   validationResult: "valid" | "invalid" | "missing-signature" | "missing-token" | "test-mode";
+  validationUrlSource: "production-site-url" | "forwarded-headers" | "request-url";
+  usedHttps: boolean;
+  usedWww: boolean;
   webhookType: TwilioWebhookType;
 };
 
@@ -28,6 +36,13 @@ function firstHeaderValue(value: string | null | undefined) {
 }
 
 export function resolveTwilioPublicOrigin(request: NextRequest) {
+  const env = getBackendEnv();
+  const productionSiteUrl = env.siteUrl?.trim();
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  if (isProduction && productionSiteUrl) {
+    return new URL(productionSiteUrl).origin.replace(/\/$/, "");
+  }
+
   const forwardedHost =
     firstHeaderValue(request.headers.get("x-forwarded-host")) ??
     firstHeaderValue(request.headers.get("x-original-host")) ??
@@ -57,7 +72,7 @@ export function buildTwilioSignaturePayload(url: string, formData: FormData | nu
   }
 
   const params = Array.from(formData.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, value]) => `${key}${String(value)}`)
     .join("");
 
@@ -80,12 +95,34 @@ export async function verifyTwilioSignature(
   },
 ): Promise<TwilioVerificationResult> {
   const env = getBackendEnv();
+  const requestUrl = new URL(request.url);
+  const formData = options?.formData ?? (await request.clone().formData().catch(() => null));
+  const parameterCount = formData ? Array.from(formData.entries()).length : 0;
+  const hostHeader = firstHeaderValue(request.headers.get("host"));
+  const forwardedHost = firstHeaderValue(request.headers.get("x-forwarded-host"));
+  const forwardedProto = firstHeaderValue(request.headers.get("x-forwarded-proto"));
+  const validationUrlSource: TwilioVerificationDiagnostics["validationUrlSource"] =
+    process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production"
+      ? "production-site-url"
+      : forwardedHost
+        ? "forwarded-headers"
+        : "request-url";
+
+  const resolvedPublicUrl = buildTwilioValidationUrl(request);
   const diagnosticsBase = {
     authTokenDecrypted: options?.authTokenDecrypted ?? false,
     authTokenSource: options?.authTokenSource ?? (options?.authToken ? "environment" : "missing"),
-    requestPath: new URL(request.url).pathname,
-    resolvedPublicUrl: buildTwilioValidationUrl(request),
+    forwardedHost,
+    forwardedProto,
+    hostHeader,
+    parameterCount,
+    requestPath: requestUrl.pathname,
+    requestUrl: requestUrl.toString(),
+    resolvedPublicUrl,
     signatureHeaderExists: Boolean(request.headers.get("x-twilio-signature")),
+    validationUrlSource,
+    usedHttps: resolvedPublicUrl.startsWith("https://"),
+    usedWww: /(^|\/\/)www\./i.test(resolvedPublicUrl),
     webhookType: options?.webhookType ?? "unknown",
   } satisfies Omit<TwilioVerificationDiagnostics, "validationResult">;
 
@@ -129,7 +166,6 @@ export async function verifyTwilioSignature(
     };
   }
 
-  const formData = options?.formData ?? (await request.clone().formData().catch(() => null));
   const expected = createTwilioRequestSignature(diagnosticsBase.resolvedPublicUrl, authToken, formData);
 
   try {

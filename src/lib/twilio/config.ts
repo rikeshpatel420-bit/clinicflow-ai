@@ -187,13 +187,17 @@ export function resolveTwilioSignatureAuthToken(connection: TwilioConnection | n
   const env = getBackendEnv();
 
   if (connection) {
-    const decrypted = decryptConnectionAuthToken(connection);
-    if (decrypted) {
-      return {
-        authToken: decrypted,
-        authTokenDecrypted: true,
-        authTokenSource: "clinic-row" as const,
-      };
+    try {
+      const decrypted = decryptConnectionAuthToken(connection);
+      if (decrypted) {
+        return {
+          authToken: decrypted,
+          authTokenDecrypted: true,
+          authTokenSource: "clinic-row" as const,
+        };
+      }
+    } catch {
+      // Fall through to the environment token or a missing-token response below.
     }
   }
 

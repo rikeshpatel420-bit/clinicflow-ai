@@ -64,6 +64,16 @@ function buildVoiceFollowUpTwiml(input: { clinicName: string }) {
 </Response>`;
 }
 
+function buildVoiceFailureTwiml(input: { clinicName: string; voicemailUrl: string }) {
+  const clinicName = escapeXml(input.clinicName);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Sorry, ClinicFlow could not complete the call right now for ${clinicName}. Please try again shortly or leave a voicemail after the tone.</Say>
+  <Redirect method="POST">${escapeXml(input.voicemailUrl)}</Redirect>
+</Response>`;
+}
+
 function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: string }) {
   const clinicName = escapeXml(input.clinicName);
   const voicemailUrl = escapeXml(input.voicemailUrl);
@@ -73,6 +83,16 @@ function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: st
   <Say voice="alice">Please leave a message for ${clinicName} after the tone.</Say>
   <Record action="${voicemailUrl}" method="POST" maxLength="120" playBeep="true" timeout="5" transcribeCallback="${voicemailUrl}" trim="trim-silence" />
   <Say voice="alice">We did not receive a message.</Say>
+</Response>`;
+}
+
+function buildVoicemailFailureTwiml(input: { clinicName: string }) {
+  const clinicName = escapeXml(input.clinicName);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Sorry, ClinicFlow could not finish recording ${clinicName} right now. Please try again shortly.</Say>
+  <Hangup />
 </Response>`;
 }
 
@@ -368,6 +388,10 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
   const { connection, payload, testMode } = auth;
   const receivedAt = new Date().toISOString();
   const eventId = payload.CallSid || payload.MessageSid || payload.RecordingSid || `voice-${connection.clinic_id}-${Date.now().toString(36)}`;
+  const clinicName = await getClinicName(connection.clinic_id);
+  const voiceUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voice`;
+  const voicemailUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voicemail`;
+
   await recordWebhookEvent({
     clinicId: connection.clinic_id,
     eventType: "twilio.voice.received",
@@ -394,12 +418,21 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
       providerEventId: payload.CallSid ?? null,
       receivedAt,
     });
-    return buildWebhookErrorResponse(result.error ?? "Twilio voice webhook failed.", testMode ? 200 : 500);
+    return new Response(
+      buildVoiceFailureTwiml({
+        clinicName,
+        voicemailUrl,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "false",
+          "X-ClinicFlow-Test-Mode": String(testMode),
+        },
+        status: 200,
+      },
+    );
   }
-
-  const clinicName = await getClinicName(connection.clinic_id);
-  const voiceUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voice`;
-  const voicemailUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voicemail`;
 
   logTwilioEvent("voice_processed", {
     callSid: result.call.provider_call_id ?? payload.CallSid,
@@ -456,7 +489,20 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
         providerEventId: payload.CallSid ?? null,
         receivedAt,
       });
-      return buildWebhookErrorResponse(transcriptResult.error, testMode ? 200 : 500);
+      return new Response(
+        buildVoiceFailureTwiml({
+          clinicName,
+          voicemailUrl,
+        }),
+        {
+          headers: {
+            "Content-Type": "text/xml",
+            "X-ClinicFlow-Processed": "false",
+            "X-ClinicFlow-Test-Mode": String(testMode),
+          },
+          status: 200,
+        },
+      );
     }
 
     return new Response(buildVoiceFollowUpTwiml({ clinicName }), {
@@ -763,7 +809,18 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
       providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
       receivedAt,
     });
-    return buildWebhookErrorResponse(followUpResult.error ?? "Unable to persist voicemail call context.", auth.testMode ? 200 : 500);
+    return new Response(
+      buildVoicemailFailureTwiml({
+        clinicName: await getClinicName(auth.connection.clinic_id),
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
   }
 
   const artifacts = await storeVoicemailArtifacts({
@@ -788,7 +845,18 @@ export async function handleTwilioVoicemailWebhook(request: NextRequest) {
       providerEventId: auth.payload.RecordingSid || auth.payload.CallSid || null,
       receivedAt,
     });
-    return buildWebhookErrorResponse(artifacts.error, auth.testMode ? 200 : 500);
+    return new Response(
+      buildVoicemailFailureTwiml({
+        clinicName: await getClinicName(auth.connection.clinic_id),
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
   }
 
   logTwilioEvent("voicemail_processed", {

@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Call, CallTranscript, Clinic, Inserts, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { generateCallReceptionSummary } from "@/lib/ai/call-summary";
+import { getBackendEnv } from "@/lib/backend/env";
 import { hashPhoneNumber, normalizePhoneNumber } from "./crypto";
 import { getTwilioConnectionForVoiceNumber, toTwilioConnectionView } from "./config";
 import { classifyTwilioCall, type TwilioWebhookPayload } from "./missed-call";
@@ -686,6 +687,7 @@ export async function refreshCallReceptionSummary(input: {
   lead?: PatientLead | null;
 }) {
   const admin = createSupabaseAdminClient();
+  const env = getBackendEnv();
 
   const [{ data: lead }, { data: smsEvents }, { data: transcript }, { data: voicemail }] = await Promise.all([
     input.lead
@@ -730,6 +732,30 @@ export async function refreshCallReceptionSummary(input: {
 
   const summary = summaryResult.summary;
   const now = new Date().toISOString();
+
+  if (env.openaiApiKey && summaryResult.modelProvider !== "openai") {
+    const { error: fallbackAuditError } = await admin.from("audit_events").insert({
+      actor_user_id: input.connection.created_by,
+      clinic_id: input.connection.clinic_id,
+      entity_id: input.call.id,
+      entity_table: "calls",
+      event_type: "twilio.summary_fallback_used",
+      metadata: {
+        call_id: input.call.id,
+        clinic_id: input.connection.clinic_id,
+        lead_id: lead?.id ?? input.call.lead_id ?? null,
+        model_provider: summaryResult.modelProvider,
+      },
+      risk_level: "medium",
+    });
+
+    if (fallbackAuditError) {
+      logTwilioError("summary_fallback_audit_failed", fallbackAuditError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    }
+  }
 
   const { error: auditError } = await admin.from("ai_audit_logs").insert({
     action: "summary_created",

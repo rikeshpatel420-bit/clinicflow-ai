@@ -17,12 +17,27 @@ export type BackendEnv = {
   twilioWebhookTestMode?: boolean;
 };
 
+function resolveSiteUrl() {
+  const explicitSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicitSiteUrl) {
+    return explicitSiteUrl.replace(/\/$/, "");
+  }
+
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) {
+    const normalized = vercelUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    return `https://${normalized}`;
+  }
+
+  return "http://localhost:3000";
+}
+
 export function getBackendEnv(): BackendEnv {
   const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
 
   return {
     cronSecret: process.env.CRON_SECRET,
-    siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+    siteUrl: resolveSiteUrl(),
     openaiApiKey: process.env.OPENAI_API_KEY,
     openaiModel: process.env.OPENAI_MODEL ?? "gpt-5.5",
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,

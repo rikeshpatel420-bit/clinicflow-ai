@@ -183,6 +183,36 @@ export function decryptConnectionAuthToken(connection: TwilioConnection) {
   );
 }
 
+export function resolveTwilioSignatureAuthToken(connection: TwilioConnection | null | undefined) {
+  const env = getBackendEnv();
+
+  if (connection) {
+    const decrypted = decryptConnectionAuthToken(connection);
+    if (decrypted) {
+      return {
+        authToken: decrypted,
+        authTokenDecrypted: true,
+        authTokenSource: "clinic-row" as const,
+      };
+    }
+  }
+
+  const envToken = env.twilioAuthToken?.trim();
+  if (envToken) {
+    return {
+      authToken: envToken,
+      authTokenDecrypted: false,
+      authTokenSource: "environment" as const,
+    };
+  }
+
+  return {
+    authToken: null,
+    authTokenDecrypted: false,
+    authTokenSource: "missing" as const,
+  };
+}
+
 export async function verifyTwilioConnection(connection: TwilioConnection) {
   const authToken = decryptConnectionAuthToken(connection);
   if (!authToken) {

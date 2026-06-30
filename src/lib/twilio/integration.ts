@@ -1,9 +1,9 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Call, CallRecording, CallTranscript, Json, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
-import { decryptConnectionAuthToken, getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber } from "./config";
+import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
 import { parseTwilioFormData, type TwilioWebhookPayload } from "./missed-call";
 import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "./recovery";
-import { verifyTwilioSignature } from "./verification";
+import { resolveTwilioPublicOrigin, verifyTwilioSignature, type TwilioWebhookType } from "./verification";
 import type { NextRequest } from "next/server";
 
 export type TwilioExtendedWebhookPayload = TwilioWebhookPayload & {
@@ -36,7 +36,26 @@ function escapeXml(value: string) {
 }
 
 function buildWebhookBaseUrl(request: Request) {
-  return new URL(request.url).origin.replace(/\/$/, "");
+  return resolveTwilioPublicOrigin(request as NextRequest);
+}
+
+function buildInvalidVoiceTwiml() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Sorry, ClinicFlow could not verify this call right now. Please try again shortly.</Say>
+  <Hangup />
+</Response>`;
+}
+
+function webhookFailureHeaders(verification: { diagnostics?: { authTokenDecrypted: boolean; authTokenSource: string; requestPath: string; resolvedPublicUrl: string; signatureHeaderExists: boolean; validationResult: string; webhookType: string } }, testMode: boolean) {
+  return {
+    "X-ClinicFlow-Test-Mode": String(testMode),
+    "X-ClinicFlow-Twilio-Diagnostics": JSON.stringify(verification.diagnostics ?? {}),
+  };
+}
+
+function logTwilioVerificationFailure(event: string, verification: { diagnostics?: Record<string, unknown>; reason: string }) {
+  console.error("[ClinicFlow Twilio]", event, JSON.stringify({ ...verification.diagnostics, reason: verification.reason }));
 }
 
 function buildVoiceGreetingTwiml(input: { clinicName: string; voicemailUrl: string; voiceUrl: string }) {
@@ -195,17 +214,48 @@ function parseExtendedTwilioFormData(formData: FormData): TwilioExtendedWebhookP
   };
 }
 
-async function authenticateTwilioWebhook(request: NextRequest) {
+async function authenticateTwilioWebhook(request: NextRequest, webhookType: TwilioWebhookType) {
   const formData = await request.formData();
   const payload = parseExtendedTwilioFormData(formData);
   const connectionLookup = await resolveTwilioConnection(payload);
+  const resolvedAuthToken = resolveTwilioSignatureAuthToken(connectionLookup.connection);
   const verification = await verifyTwilioSignature(request, {
-    authToken: connectionLookup.connection ? decryptConnectionAuthToken(connectionLookup.connection) : null,
+    authToken: resolvedAuthToken.authToken,
+    authTokenDecrypted: resolvedAuthToken.authTokenDecrypted,
+    authTokenSource: resolvedAuthToken.authTokenSource,
     formData,
+    webhookType,
   });
 
   if (!verification.isValid) {
-    return { errorResponse: buildWebhookErrorResponse(verification.reason, 401), ok: false as const };
+    logTwilioVerificationFailure(`${webhookType}_signature_failed`, verification);
+
+    if (webhookType === "voice") {
+      return {
+        errorResponse: new Response(buildInvalidVoiceTwiml(), {
+          headers: {
+            "Content-Type": "text/xml",
+            ...webhookFailureHeaders(verification, verification.isTestMode),
+          },
+          status: 200,
+        }),
+        ok: false as const,
+      };
+    }
+
+    return {
+      errorResponse: Response.json(
+        {
+          diagnostics: verification.diagnostics,
+          ok: false,
+          reason: verification.reason,
+        },
+        {
+          status: verification.reason === "Missing Twilio signature." || verification.reason === "Missing Twilio auth token." ? 401 : 403,
+        },
+      ),
+      ok: false as const,
+    };
   }
 
   if (!connectionLookup.connection) {
@@ -222,6 +272,7 @@ async function authenticateTwilioWebhook(request: NextRequest) {
     connection: connectionLookup.connection,
     ok: true as const,
     payload: resolvedPayload,
+    verification,
     testMode: verification.isTestMode,
   };
 }
@@ -380,7 +431,7 @@ function followUpPayloadFromVoicemail(input: TwilioExtendedWebhookPayload): Twil
 }
 
 export async function handleTwilioVoiceWebhook(request: NextRequest) {
-  const auth = await authenticateTwilioWebhook(request);
+  const auth = await authenticateTwilioWebhook(request, "voice");
   if (!auth.ok) {
     return auth.errorResponse;
   }
@@ -533,7 +584,7 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
 }
 
 export async function handleTwilioStatusWebhook(request: NextRequest) {
-  const auth = await authenticateTwilioWebhook(request);
+  const auth = await authenticateTwilioWebhook(request, "status");
   if (!auth.ok) {
     return auth.errorResponse;
   }
@@ -602,7 +653,7 @@ export async function handleTwilioStatusWebhook(request: NextRequest) {
 }
 
 export async function handleTwilioMissedCallWebhook(request: NextRequest) {
-  const auth = await authenticateTwilioWebhook(request);
+  const auth = await authenticateTwilioWebhook(request, "missed-call");
   if (!auth.ok) {
     return auth.errorResponse;
   }
@@ -675,7 +726,7 @@ export async function handleTwilioMissedCallWebhook(request: NextRequest) {
 }
 
 export async function handleTwilioSmsWebhook(request: NextRequest) {
-  const auth = await authenticateTwilioWebhook(request);
+  const auth = await authenticateTwilioWebhook(request, "sms");
   if (!auth.ok) {
     return auth.errorResponse;
   }
@@ -742,7 +793,7 @@ export async function handleTwilioSmsWebhook(request: NextRequest) {
 }
 
 export async function handleTwilioVoicemailWebhook(request: NextRequest) {
-  const auth = await authenticateTwilioWebhook(request);
+  const auth = await authenticateTwilioWebhook(request, "voicemail");
   if (!auth.ok) {
     return auth.errorResponse;
   }

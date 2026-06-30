@@ -1,28 +1,43 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 import { parseTwilioFormData } from "@/lib/twilio/missed-call";
-import { decryptConnectionAuthToken, getTwilioConnectionForVoiceNumber } from "@/lib/twilio/config";
+import { getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "@/lib/twilio/config";
 import { processTwilioCallWebhook } from "@/lib/twilio/recovery";
-import { verifyTwilioSignature } from "@/lib/twilio/verification";
+import { resolveTwilioPublicOrigin, verifyTwilioSignature } from "@/lib/twilio/verification";
 
 function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function buildFailureTwiml() {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, ClinicFlow could not verify this call right now. Please try again shortly.</Say><Hangup /></Response>`;
 }
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const payload = parseTwilioFormData(formData);
   const connectionLookup = await getTwilioConnectionForVoiceNumber(payload.To || payload.Called);
+  const resolvedAuthToken = resolveTwilioSignatureAuthToken(connectionLookup.connection);
   const verification = await verifyTwilioSignature(request, {
-    authToken: connectionLookup.connection ? decryptConnectionAuthToken(connectionLookup.connection) : null,
+    authToken: resolvedAuthToken.authToken,
+    authTokenDecrypted: resolvedAuthToken.authTokenDecrypted,
+    authTokenSource: resolvedAuthToken.authTokenSource,
     formData,
+    webhookType: "voice",
   });
 
   if (!verification.isValid) {
-    return NextResponse.json({ ok: false, reason: verification.reason }, { status: 401 });
+    console.error("[ClinicFlow Twilio]", "voice_signature_failed", JSON.stringify(verification.diagnostics));
+    return new Response(buildFailureTwiml(), {
+      headers: {
+        "Content-Type": "text/xml",
+        "X-ClinicFlow-Twilio-Diagnostics": JSON.stringify(verification.diagnostics),
+      },
+      status: 200,
+    });
   }
 
   const result = await processTwilioCallWebhook(payload);
-  const statusUrl = `${request.nextUrl.origin.replace(/\/$/, "")}/api/webhooks/twilio/status`;
+  const statusUrl = `${resolveTwilioPublicOrigin(request)}/api/webhooks/twilio/status`;
   const connection = connectionLookup.connection;
   const call = "call" in result ? result.call : null;
 

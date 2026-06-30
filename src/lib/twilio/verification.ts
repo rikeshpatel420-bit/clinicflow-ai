@@ -2,18 +2,58 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { getBackendEnv } from "@/lib/backend/env";
 
+export type TwilioWebhookType = "missed-call" | "sms" | "status" | "voice" | "voicemail" | "unknown";
+
+export type TwilioAuthTokenSource = "clinic-row" | "environment" | "missing";
+
+export type TwilioVerificationDiagnostics = {
+  authTokenDecrypted: boolean;
+  authTokenSource: TwilioAuthTokenSource;
+  requestPath: string;
+  resolvedPublicUrl: string;
+  signatureHeaderExists: boolean;
+  validationResult: "valid" | "invalid" | "missing-signature" | "missing-token" | "test-mode";
+  webhookType: TwilioWebhookType;
+};
+
 export type TwilioVerificationResult = {
+  diagnostics: TwilioVerificationDiagnostics;
   isTestMode: boolean;
   isValid: boolean;
   reason: string;
 };
 
-function buildTwilioSignaturePayload(request: NextRequest, formData: FormData | null) {
-  const url = new URL(request.url);
-  const base = url.toString();
+function firstHeaderValue(value: string | null | undefined) {
+  return value?.split(",")[0]?.trim() ?? null;
+}
 
+export function resolveTwilioPublicOrigin(request: NextRequest) {
+  const forwardedHost =
+    firstHeaderValue(request.headers.get("x-forwarded-host")) ??
+    firstHeaderValue(request.headers.get("x-original-host")) ??
+    firstHeaderValue(request.headers.get("host"));
+  const fallbackOrigin = new URL(request.url).origin.replace(/\/$/, "");
+
+  if (!forwardedHost) {
+    return fallbackOrigin;
+  }
+
+  const forwardedProto =
+    firstHeaderValue(request.headers.get("x-forwarded-proto")) ??
+    (/(?:^|,)\s*(localhost|127\.0\.0\.1)(?:\s*|,|$)/i.test(forwardedHost) ? "http" : "https");
+
+  return `${forwardedProto}://${forwardedHost}`.replace(/\/$/, "");
+}
+
+export function buildTwilioValidationUrl(request: NextRequest) {
+  const origin = resolveTwilioPublicOrigin(request);
+  const { pathname, search } = new URL(request.url);
+  return `${origin}${pathname}${search}`;
+}
+
+export function buildTwilioSignaturePayload(url: string, formData: FormData | null) {
   if (!formData) {
-    return base;
+    return url;
   }
 
   const params = Array.from(formData.entries())
@@ -21,17 +61,40 @@ function buildTwilioSignaturePayload(request: NextRequest, formData: FormData | 
     .map(([key, value]) => `${key}${String(value)}`)
     .join("");
 
-  return `${base}${params}`;
+  return `${url}${params}`;
+}
+
+export function createTwilioRequestSignature(url: string, authToken: string, formData: FormData | null) {
+  const payload = buildTwilioSignaturePayload(url, formData);
+  return createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
 }
 
 export async function verifyTwilioSignature(
   request: NextRequest,
-  options?: { authToken?: string | null; formData?: FormData | null },
+  options?: {
+    authToken?: string | null;
+    authTokenDecrypted?: boolean;
+    authTokenSource?: TwilioAuthTokenSource;
+    formData?: FormData | null;
+    webhookType?: TwilioWebhookType;
+  },
 ): Promise<TwilioVerificationResult> {
   const env = getBackendEnv();
+  const diagnosticsBase = {
+    authTokenDecrypted: options?.authTokenDecrypted ?? false,
+    authTokenSource: options?.authTokenSource ?? (options?.authToken ? "environment" : "missing"),
+    requestPath: new URL(request.url).pathname,
+    resolvedPublicUrl: buildTwilioValidationUrl(request),
+    signatureHeaderExists: Boolean(request.headers.get("x-twilio-signature")),
+    webhookType: options?.webhookType ?? "unknown",
+  } satisfies Omit<TwilioVerificationDiagnostics, "validationResult">;
 
   if (env.twilioWebhookTestMode) {
     return {
+      diagnostics: {
+        ...diagnosticsBase,
+        validationResult: "test-mode",
+      },
       isTestMode: true,
       isValid: true,
       reason: "Test mode accepts webhook payloads without live Twilio verification.",
@@ -42,6 +105,11 @@ export async function verifyTwilioSignature(
 
   if (!authToken) {
     return {
+      diagnostics: {
+        ...diagnosticsBase,
+        authTokenSource: "missing",
+        validationResult: "missing-token",
+      },
       isTestMode: false,
       isValid: false,
       reason: "Missing Twilio auth token.",
@@ -51,6 +119,10 @@ export async function verifyTwilioSignature(
   const signature = request.headers.get("x-twilio-signature");
   if (!signature) {
     return {
+      diagnostics: {
+        ...diagnosticsBase,
+        validationResult: "missing-signature",
+      },
       isTestMode: false,
       isValid: false,
       reason: "Missing Twilio signature.",
@@ -58,23 +130,18 @@ export async function verifyTwilioSignature(
   }
 
   const formData = options?.formData ?? (await request.clone().formData().catch(() => null));
-  const payload = buildTwilioSignaturePayload(request, formData);
-  const expected = createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
+  const expected = createTwilioRequestSignature(diagnosticsBase.resolvedPublicUrl, authToken, formData);
 
   try {
     const expectedBytes = Buffer.from(expected, "utf8");
     const providedBytes = Buffer.from(signature, "utf8");
 
-    if (expectedBytes.length !== providedBytes.length) {
+    if (expectedBytes.length !== providedBytes.length || !timingSafeEqual(expectedBytes, providedBytes)) {
       return {
-        isTestMode: false,
-        isValid: false,
-        reason: "Invalid Twilio signature.",
-      };
-    }
-
-    if (!timingSafeEqual(expectedBytes, providedBytes)) {
-      return {
+        diagnostics: {
+          ...diagnosticsBase,
+          validationResult: "invalid",
+        },
         isTestMode: false,
         isValid: false,
         reason: "Invalid Twilio signature.",
@@ -82,6 +149,10 @@ export async function verifyTwilioSignature(
     }
   } catch {
     return {
+      diagnostics: {
+        ...diagnosticsBase,
+        validationResult: "invalid",
+      },
       isTestMode: false,
       isValid: false,
       reason: "Invalid Twilio signature.",
@@ -89,6 +160,10 @@ export async function verifyTwilioSignature(
   }
 
   return {
+    diagnostics: {
+      ...diagnosticsBase,
+      validationResult: "valid",
+    },
     isTestMode: false,
     isValid: true,
     reason: "Signature verified.",

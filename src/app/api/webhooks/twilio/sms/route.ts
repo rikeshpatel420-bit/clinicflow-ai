@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { parseTwilioFormData } from "@/lib/twilio/missed-call";
-import { decryptConnectionAuthToken, getTwilioConnectionForVoiceNumber } from "@/lib/twilio/config";
+import { getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "@/lib/twilio/config";
 import { processTwilioSmsWebhook } from "@/lib/twilio/recovery";
 import { verifyTwilioSignature } from "@/lib/twilio/verification";
 
@@ -8,13 +8,25 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const payload = parseTwilioFormData(formData);
   const connectionLookup = await getTwilioConnectionForVoiceNumber(payload.To || payload.Called);
+  const resolvedAuthToken = resolveTwilioSignatureAuthToken(connectionLookup.connection);
   const verification = await verifyTwilioSignature(request, {
-    authToken: connectionLookup.connection ? decryptConnectionAuthToken(connectionLookup.connection) : null,
+    authToken: resolvedAuthToken.authToken,
+    authTokenDecrypted: resolvedAuthToken.authTokenDecrypted,
+    authTokenSource: resolvedAuthToken.authTokenSource,
     formData,
+    webhookType: "sms",
   });
 
   if (!verification.isValid) {
-    return NextResponse.json({ ok: false, reason: verification.reason }, { status: 401 });
+    console.error("[ClinicFlow Twilio]", "sms_signature_failed", JSON.stringify(verification.diagnostics));
+    return NextResponse.json(
+      {
+        diagnostics: verification.diagnostics,
+        ok: false,
+        reason: verification.reason,
+      },
+      { status: 401 },
+    );
   }
 
   const result = await processTwilioSmsWebhook(payload);

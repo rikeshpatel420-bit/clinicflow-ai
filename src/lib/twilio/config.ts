@@ -12,6 +12,11 @@ function isMissingRelationError(error: { message?: string } | null | undefined) 
   return Boolean(error?.message?.toLowerCase().includes("twilio_connections"));
 }
 
+export function isMissingTwilioConnectionsTableError(error: { message?: string } | string | null | undefined) {
+  const message = typeof error === "string" ? error : error?.message ?? "";
+  return message.toLowerCase().includes("twilio_connections");
+}
+
 export type TwilioConnectionView = Pick<
   TwilioConnection,
   | "id"

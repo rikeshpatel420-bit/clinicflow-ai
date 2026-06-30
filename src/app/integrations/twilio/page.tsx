@@ -40,6 +40,7 @@ function statusMessage(value?: string) {
   if (value === "demo-needs-connection") return { tone: "error" as const, text: "Create the Twilio connection first, then try the demo buttons again." };
   if (value === "demo-needs-missed-call") return { tone: "error" as const, text: "Simulate a missed call first so the SMS reply flow has a thread to update." };
   if (value === "demo-needs-call") return { tone: "error" as const, text: "Create a call first, then generate the AI summary." };
+  if (value === "storage-missing") return { tone: "error" as const, text: "Twilio configuration storage is missing from the live database. Apply the Twilio migration, then save again." };
   if (value === "test-error") return { tone: "error" as const, text: "Twilio connection test failed. Please check the SID, token, and voice number." };
   if (value === "sms-error") return { tone: "error" as const, text: "Test SMS could not be sent. Please check the Twilio sender configuration." };
   if (value === "call-error") return { tone: "error" as const, text: "Test call recovery could not complete. Please review the Twilio setup." };

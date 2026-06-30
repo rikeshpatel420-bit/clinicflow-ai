@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { type TwilioWebhookPayload } from "@/lib/twilio/missed-call";
 import { hashPhoneNumber, normalizePhoneNumber } from "@/lib/twilio/crypto";
-import { deleteTwilioConnection, getTwilioConnectionForClinic, saveTwilioConnection, verifyTwilioConnection } from "@/lib/twilio/config";
+import { deleteTwilioConnection, getTwilioConnectionForClinic, isMissingTwilioConnectionsTableError, saveTwilioConnection, verifyTwilioConnection } from "@/lib/twilio/config";
 import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "@/lib/twilio/recovery";
 import { createRecoverySmsDraft, sendRecoverySms } from "@/lib/twilio/sms";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -106,7 +106,7 @@ export async function saveTwilioConfigAction(formData: FormData) {
   });
 
   if (result.error) {
-    redirect("/integrations/twilio?status=error");
+    redirect(isMissingTwilioConnectionsTableError(result.error) ? "/integrations/twilio?status=storage-missing" : "/integrations/twilio?status=error");
   }
 
   revalidatePath("/integrations");

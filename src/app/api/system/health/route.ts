@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getBackendEnv } from "@/lib/backend/env";
 import { getDeploymentMode } from "@/lib/deployment/readiness";
 import { getSupabaseEnv } from "@/lib/supabase/env";
-import { getTwilioPublicHealth } from "@/lib/twilio/health";
+import { getTwilioPublicHealth, hasConfiguredTwilioSender } from "@/lib/twilio/health";
 
 export function GET(request: NextRequest) {
   const { isSupabaseConfigured } = getSupabaseEnv();
@@ -21,7 +21,9 @@ export function GET(request: NextRequest) {
       openAiConfigured: Boolean(env.openaiApiKey),
       supabaseServiceRoleConfigured: Boolean(env.supabaseServiceRoleKey),
       twilioConfigEncryptionSecretConfigured: Boolean(env.twilioConfigEncryptionSecret),
-      twilioSenderConfigured: Boolean(env.twilioMessagingServiceSid || env.twilioPhoneNumber),
+      twilioMessagingServiceConfigured: Boolean(env.twilioMessagingServiceSid?.trim()),
+      twilioPhoneNumberConfigured: Boolean(env.twilioPhoneNumber?.trim()),
+      twilioSenderConfigured: hasConfiguredTwilioSender(env),
     },
     mode: getDeploymentMode(),
     runtime,

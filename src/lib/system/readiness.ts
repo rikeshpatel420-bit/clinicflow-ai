@@ -5,7 +5,7 @@ import { getDeploymentMode } from "@/lib/deployment/readiness";
 import { getClinicDashboardData, type ClinicDashboardData } from "@/lib/dashboard/live-data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getTwilioPublicHealth, getTwilioSetupHealthForClinic, type TwilioSetupHealth } from "@/lib/twilio/health";
+import { getTwilioPublicHealth, getTwilioSetupHealthForClinic, hasConfiguredTwilioSender, type TwilioSetupHealth } from "@/lib/twilio/health";
 
 export type ReadinessStatus = "complete" | "missing" | "error";
 
@@ -42,6 +42,7 @@ export type ProductionReadinessReport = {
     twilioConfigEncryptionSecret: boolean;
     twilioMessagingServiceSid: boolean;
     twilioPhoneNumber: boolean;
+    twilioSenderConfigured: boolean;
     twilioTestMode: boolean;
   };
   lastCheckedAt: string;
@@ -106,8 +107,9 @@ function buildEnvChecks() {
     supabaseServiceRoleKey: Boolean(env.supabaseServiceRoleKey),
     supabaseUrl: Boolean(supabase.supabaseUrl),
     twilioConfigEncryptionSecret: Boolean(env.twilioConfigEncryptionSecret),
-    twilioMessagingServiceSid: Boolean(env.twilioMessagingServiceSid),
-    twilioPhoneNumber: Boolean(env.twilioPhoneNumber),
+    twilioMessagingServiceSid: Boolean(env.twilioMessagingServiceSid?.trim()),
+    twilioPhoneNumber: Boolean(env.twilioPhoneNumber?.trim()),
+    twilioSenderConfigured: hasConfiguredTwilioSender(env),
     twilioTestMode: Boolean(env.twilioWebhookTestMode),
   };
 }
@@ -356,7 +358,7 @@ function summarizeBlockers(report: {
   if (!report.env.twilioConfigEncryptionSecret) blockers.add("Set TWILIO_CONFIG_ENCRYPTION_SECRET so clinic Twilio secrets can be encrypted and decrypted.");
   if (report.env.twilioTestMode) blockers.add("Set TWILIO_WEBHOOK_TEST_MODE=false before live call handling.");
   if (!report.env.openAiKey) blockers.add("Set OPENAI_API_KEY for call summaries and recommendations.");
-  if (!report.env.twilioMessagingServiceSid && !report.env.twilioPhoneNumber) {
+  if (!report.env.twilioSenderConfigured) {
     blockers.add("Set either TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER for outbound SMS recovery.");
   }
   if (!report.twilioHealth?.connection) {
@@ -427,4 +429,3 @@ export async function buildProductionReadinessReport(input: {
     urls: buildWebhookUrls(input.baseUrl),
   } satisfies ProductionReadinessReport;
 }
-

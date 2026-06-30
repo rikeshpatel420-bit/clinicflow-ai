@@ -54,12 +54,22 @@ function endpointStatus(input: { connectionConfigured: boolean; siteUrlConfigure
   return "ready";
 }
 
+function normalizedConfiguredValue(value?: string | null) {
+  return Boolean(value?.trim());
+}
+
+export function hasConfiguredTwilioSender(env = getBackendEnv()) {
+  return normalizedConfiguredValue(env.twilioMessagingServiceSid) || normalizedConfiguredValue(env.twilioPhoneNumber);
+}
+
 export function getTwilioEnvHealth() {
   const env = getBackendEnv();
 
   return {
-    configEncryptionSecret: Boolean(env.twilioConfigEncryptionSecret),
-    smsSenderConfigured: Boolean(env.twilioMessagingServiceSid || env.twilioPhoneNumber),
+    configEncryptionSecret: normalizedConfiguredValue(env.twilioConfigEncryptionSecret),
+    smsSenderConfigured: hasConfiguredTwilioSender(env),
+    smsSenderMessagingServiceConfigured: normalizedConfiguredValue(env.twilioMessagingServiceSid),
+    smsSenderPhoneNumberConfigured: normalizedConfiguredValue(env.twilioPhoneNumber),
     siteUrlConfigured: Boolean(env.siteUrl),
     testMode: Boolean(env.twilioWebhookTestMode),
   };

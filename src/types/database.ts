@@ -1052,6 +1052,8 @@ export type Database = {
           id: string;
           clinic_id: string;
           account_sid: string;
+          active: boolean;
+          encrypted_auth_token: string | null;
           voice_number: string;
           forward_to_number: string;
           auth_token_ciphertext: string;
@@ -1069,6 +1071,8 @@ export type Database = {
           id?: string;
           clinic_id: string;
           account_sid: string;
+          active?: boolean;
+          encrypted_auth_token?: string | null;
           voice_number: string;
           forward_to_number: string;
           auth_token_ciphertext: string;
@@ -1086,6 +1090,8 @@ export type Database = {
           id?: string;
           clinic_id?: string;
           account_sid?: string;
+          active?: boolean;
+          encrypted_auth_token?: string | null;
           voice_number?: string;
           forward_to_number?: string;
           auth_token_ciphertext?: string;

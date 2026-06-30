@@ -2,11 +2,13 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { IntegrationShell } from "@/components/integrations/integration-shell";
 import { CopyValueButton } from "@/components/integrations/copy-value-button";
+import { ReadinessAutoRefresh } from "@/components/system/readiness-auto-refresh";
 import { TwilioOperationsBoard } from "@/components/integrations/twilio-operations-board";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getBackendEnv } from "@/lib/backend/env";
 import { TWILIO_DEMO_NUMBER } from "@/lib/twilio/demo";
 import { getTwilioSetupHealthForClinic } from "@/lib/twilio/health";
+import { getTwilioProductionSelfTest } from "@/lib/twilio/setup-check";
 import { maskAccountSid } from "@/lib/twilio/crypto";
 import { getTwilioOperationsDashboardData } from "@/lib/twilio/integration";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -86,6 +88,11 @@ export default async function TwilioIntegrationPage({
     requestHeaders.get("x-forwarded-proto") ?? (forwardedHost && /localhost|127\.0\.0\.1/.test(forwardedHost) ? "http" : "https");
   const baseUrl = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null;
   const health = await getTwilioSetupHealthForClinic(membership.clinic_id, { baseUrl });
+  const selfTest = await getTwilioProductionSelfTest({
+    baseUrl,
+    clinicId: membership.clinic_id,
+    role: membership.role,
+  });
   const operations = await getTwilioOperationsDashboardData(membership.clinic_id);
   const backendEnv = getBackendEnv();
   const openAiConfigured = Boolean(backendEnv.openaiApiKey);
@@ -99,6 +106,8 @@ export default async function TwilioIntegrationPage({
       title="Twilio setup wizard"
       description="Secure clinic-level call capture, missed-call recovery, webhook routing, and live SMS validation for the current practice."
     >
+      <ReadinessAutoRefresh />
+
       {message ? (
         <section
           className={`rounded-lg border p-4 text-sm font-medium ${
@@ -161,6 +170,58 @@ export default async function TwilioIntegrationPage({
             ))}
           </div>
         </article>
+      </section>
+
+      <section className="rounded-[32px] border border-[#dce6e3] bg-white p-6 shadow-[0_24px_100px_rgba(16,33,29,0.08)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-[#087968]">Production activation</p>
+            <h2 className="mt-2 text-2xl font-semibold text-[#10201d]">Self-test the live Twilio setup</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#65736f]">
+              This check reads the live clinic membership, Twilio connection storage, webhook readiness, and sender configuration without exposing
+              secrets.
+            </p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selfTest.overallReady ? "bg-[#e8f8f4] text-[#087968]" : "bg-[#fff7f2] text-[#9a3412]"}`}>
+            {selfTest.overallReady ? "Ready for live traffic" : "Needs attention"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {selfTest.checklist.map((item) => (
+            <article key={item.label} className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#10201d]">{item.label}</p>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    item.status === "complete" ? "bg-[#e8f8f4] text-[#087968]" : item.status === "error" ? "bg-red-50 text-red-700" : "bg-[#fff7f2] text-[#9a3412]"
+                  }`}
+                >
+                  {item.status === "complete" ? "Complete" : item.status === "error" ? "Error" : "Missing"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-[#65736f]">{item.detail}</p>
+              <p className="mt-3 text-xs font-medium leading-5 text-[#52615d]">{item.action}</p>
+            </article>
+          ))}
+        </div>
+
+        {selfTest.issues.length ? (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">What to do next</p>
+            <ul className="mt-3 grid gap-2 text-sm leading-6 text-amber-900">
+              {selfTest.issues.map((issue) => (
+                <li key={issue} className="rounded-xl border border-amber-100 bg-white px-3 py-2">
+                  {issue}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-[#c8eee6] bg-[#f7fffd] p-4 text-sm font-medium text-[#087968]">
+            Storage is ready, the connection is saved, the number is active, and the webhook URLs are configured.
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">

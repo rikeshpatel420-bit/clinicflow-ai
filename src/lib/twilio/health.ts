@@ -1,5 +1,5 @@
 import { getBackendEnv } from "@/lib/backend/env";
-import { getTwilioConnectionForClinic, toTwilioConnectionView, type TwilioConnectionView } from "./config";
+import { getTwilioConnectionForClinic, isTwilioConnectionActive, toTwilioConnectionView, type TwilioConnectionView } from "./config";
 
 export type TwilioEndpointStatus = "ready" | "missing-site-url" | "missing-connection" | "missing-config";
 
@@ -114,7 +114,7 @@ export async function getTwilioSetupHealthForClinic(clinicId: string, options?: 
   const indicators = {
     connected: Boolean(
       connection &&
-        connection.status === "active" &&
+        isTwilioConnectionActive(connection) &&
         connection.account_sid &&
         connection.hasAuthToken &&
         connection.voice_number &&
@@ -122,9 +122,9 @@ export async function getTwilioSetupHealthForClinic(clinicId: string, options?: 
         resolvedSiteUrlConfigured &&
         !env.testMode,
     ),
-    phoneNumberActive: Boolean(connection?.voice_number),
-    smsWorking: Boolean(connection && connection.status === "active" && env.smsSenderConfigured),
-    voiceWorking: Boolean(connection && connection.status === "active" && connection.voice_number && connection.forward_to_number),
+    phoneNumberActive: Boolean(connection?.voice_number && isTwilioConnectionActive(connection)),
+    smsWorking: Boolean(connection && isTwilioConnectionActive(connection) && env.smsSenderConfigured),
+    voiceWorking: Boolean(connection && isTwilioConnectionActive(connection) && connection.voice_number && connection.forward_to_number),
   };
 
   return {

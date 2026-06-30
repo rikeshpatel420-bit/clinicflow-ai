@@ -53,3 +53,28 @@ export function decryptTwilioSecret(input: EncryptedSecret, secret: string) {
 
   return Buffer.concat([decipher.update(Buffer.from(input.ciphertext, "base64")), decipher.final()]).toString("utf8");
 }
+
+export function encodeEncryptedTwilioSecret(secret: EncryptedSecret) {
+  return JSON.stringify(secret);
+}
+
+export function decodeEncryptedTwilioSecret(value?: string | null): EncryptedSecret | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<EncryptedSecret>;
+    if (typeof parsed.ciphertext === "string" && typeof parsed.iv === "string" && typeof parsed.tag === "string") {
+      return {
+        ciphertext: parsed.ciphertext,
+        iv: parsed.iv,
+        tag: parsed.tag,
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}

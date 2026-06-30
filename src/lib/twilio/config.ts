@@ -1,15 +1,11 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBackendEnv } from "@/lib/backend/env";
 import type { TwilioConnection } from "@/types/database";
-import { decryptTwilioSecret, encryptTwilioSecret, maskAccountSid, normalizePhoneNumber } from "./crypto";
+import { decodeEncryptedTwilioSecret, decryptTwilioSecret, encodeEncryptedTwilioSecret, encryptTwilioSecret, maskAccountSid, normalizePhoneNumber } from "./crypto";
 
 function getEncryptionSecret() {
   const env = getBackendEnv();
   return env.twilioConfigEncryptionSecret ?? env.supabaseServiceRoleKey ?? env.twilioWebhookSigningSecret ?? null;
-}
-
-function isMissingRelationError(error: { message?: string } | null | undefined) {
-  return Boolean(error?.message?.toLowerCase().includes("twilio_connections"));
 }
 
 export function isMissingTwilioConnectionsTableError(error: { message?: string } | string | null | undefined) {
@@ -17,11 +13,16 @@ export function isMissingTwilioConnectionsTableError(error: { message?: string }
   return message.toLowerCase().includes("twilio_connections");
 }
 
+export function isTwilioConnectionActive(connection: Pick<TwilioConnection, "active" | "status"> | null | undefined) {
+  return Boolean(connection && (connection.active || connection.status === "active"));
+}
+
 export type TwilioConnectionView = Pick<
   TwilioConnection,
   | "id"
   | "clinic_id"
   | "account_sid"
+  | "active"
   | "voice_number"
   | "forward_to_number"
   | "status"
@@ -41,18 +42,22 @@ export function toTwilioConnectionView(connection: TwilioConnection | null): Twi
     return null;
   }
 
+  const active = isTwilioConnectionActive(connection);
+  const hasAuthToken = Boolean(connection.encrypted_auth_token ?? connection.auth_token_ciphertext);
+
   return {
     accountSidMasked: maskAccountSid(connection.account_sid),
     account_sid: connection.account_sid,
+    active,
     clinic_id: connection.clinic_id,
     created_at: connection.created_at,
     created_by: connection.created_by,
     forward_to_number: connection.forward_to_number,
-    hasAuthToken: Boolean(connection.auth_token_ciphertext),
+    hasAuthToken,
     id: connection.id,
     last_error: connection.last_error,
     last_validated_at: connection.last_validated_at,
-    status: connection.status,
+    status: active ? "active" : connection.status,
     updated_at: connection.updated_at,
     updated_by: connection.updated_by,
     voice_number: connection.voice_number,
@@ -64,7 +69,7 @@ export async function getTwilioConnectionForClinic(clinicId: string) {
   const { data, error } = await admin.from("twilio_connections").select("*").eq("clinic_id", clinicId).maybeSingle<TwilioConnection>();
 
   if (error) {
-    if (isMissingRelationError(error)) {
+    if (isMissingTwilioConnectionsTableError(error)) {
       return { connection: null, error: null, tableMissing: true };
     }
 
@@ -85,18 +90,22 @@ export async function getTwilioConnectionForVoiceNumber(voiceNumber?: string | n
     .from("twilio_connections")
     .select("*")
     .eq("voice_number", normalizedVoiceNumber)
-    .eq("status", "active")
     .maybeSingle<TwilioConnection>();
 
   if (error) {
-    if (isMissingRelationError(error)) {
+    if (isMissingTwilioConnectionsTableError(error)) {
       return { connection: null, error: null, tableMissing: true };
     }
 
     return { connection: null, error: error.message, tableMissing: false };
   }
 
-  return { connection: data ?? null, error: null, tableMissing: false };
+  const connection = data ?? null;
+  if (connection && !isTwilioConnectionActive(connection)) {
+    return { connection: null, error: "The Twilio connection is not active.", tableMissing: false };
+  }
+
+  return { connection, error: null, tableMissing: false };
 }
 
 export async function saveTwilioConnection(input: {
@@ -114,15 +123,18 @@ export async function saveTwilioConnection(input: {
 
   const admin = createSupabaseAdminClient();
   const encrypted = encryptTwilioSecret(input.authToken.trim(), encryptionSecret);
+  const encryptedAuthToken = encodeEncryptedTwilioSecret(encrypted);
 
   const { data, error } = await admin
     .from("twilio_connections")
     .upsert(
       {
         account_sid: input.accountSid.trim(),
+        active: true,
         auth_token_ciphertext: encrypted.ciphertext,
         auth_token_iv: encrypted.iv,
         auth_token_tag: encrypted.tag,
+        encrypted_auth_token: encryptedAuthToken,
         clinic_id: input.clinicId,
         created_by: input.createdBy,
         forward_to_number: normalizePhoneNumber(input.forwardToNumber) ?? input.forwardToNumber.trim(),
@@ -151,6 +163,15 @@ export async function deleteTwilioConnection(clinicId: string) {
 export function decryptConnectionAuthToken(connection: TwilioConnection) {
   const secret = getEncryptionSecret();
   if (!secret) return null;
+
+  const encryptedAuthToken = decodeEncryptedTwilioSecret(connection.encrypted_auth_token);
+  if (encryptedAuthToken) {
+    try {
+      return decryptTwilioSecret(encryptedAuthToken, secret);
+    } catch {
+      // Fall back to the legacy split-column payload below.
+    }
+  }
 
   return decryptTwilioSecret(
     {

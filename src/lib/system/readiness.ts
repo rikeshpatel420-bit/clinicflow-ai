@@ -6,6 +6,7 @@ import { getClinicDashboardData, type ClinicDashboardData } from "@/lib/dashboar
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getTwilioPublicHealth, getTwilioSetupHealthForClinic, hasConfiguredTwilioSender, type TwilioSetupHealth } from "@/lib/twilio/health";
+import { isTwilioConnectionActive } from "@/lib/twilio/config";
 
 export type ReadinessStatus = "complete" | "missing" | "error";
 
@@ -219,7 +220,7 @@ function buildStepChecks(input: {
   const urls = input.twilioPublicHealth.webhookUrls;
   const totalCalls = metricValue(input.dashboard.metrics, "Total calls");
   const smsSent = metricValue(input.dashboard.metrics, "SMS sent");
-  const hasClinicConfig = Boolean(twilio?.connection && twilio.connection.status === "active");
+  const hasClinicConfig = Boolean(twilio?.connection && isTwilioConnectionActive(twilio.connection));
   const hasVoiceNumber = Boolean(twilio?.connection?.voice_number);
   const voiceWebhookReady = input.twilioPublicHealth.statuses.voiceWebhook === "ready";
   const smsWebhookReady = input.twilioPublicHealth.statuses.smsWebhook === "ready";

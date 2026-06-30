@@ -32,6 +32,7 @@ async function updateTwilioConnectionHealth(clinicId: string, userId: string, er
   await admin
     .from("twilio_connections")
     .update({
+      active: !errorMessage,
       last_error: errorMessage,
       last_validated_at: errorMessage ? null : new Date().toISOString(),
       status: errorMessage ? "error" : "active",
@@ -164,6 +165,7 @@ export async function testTwilioConfigAction() {
   await admin
     .from("twilio_connections")
     .update({
+      active: !validation.error,
       last_error: validation.error,
       last_validated_at: validation.error ? connection.last_validated_at : now,
       status: validation.error ? "error" : "active",

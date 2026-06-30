@@ -58,8 +58,39 @@ function normalizedConfiguredValue(value?: string | null) {
   return Boolean(value?.trim());
 }
 
+export type TwilioSmsSenderConfiguration =
+  | {
+      type: "messaging_service";
+      value: string;
+    }
+  | {
+      type: "phone_number";
+      value: string;
+    }
+  | null;
+
+export function getTwilioSmsSenderConfiguration(env = getBackendEnv()): TwilioSmsSenderConfiguration {
+  const messagingServiceSid = env.twilioMessagingServiceSid?.trim();
+  if (messagingServiceSid) {
+    return {
+      type: "messaging_service",
+      value: messagingServiceSid,
+    };
+  }
+
+  const phoneNumber = env.twilioPhoneNumber?.trim();
+  if (phoneNumber) {
+    return {
+      type: "phone_number",
+      value: phoneNumber,
+    };
+  }
+
+  return null;
+}
+
 export function hasConfiguredTwilioSender(env = getBackendEnv()) {
-  return normalizedConfiguredValue(env.twilioMessagingServiceSid) || normalizedConfiguredValue(env.twilioPhoneNumber);
+  return Boolean(getTwilioSmsSenderConfiguration(env));
 }
 
 export function getTwilioEnvHealth() {

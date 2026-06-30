@@ -1,6 +1,7 @@
 import { getBackendEnv } from "@/lib/backend/env";
 import type { TwilioConnection } from "@/types/database";
 import { decryptConnectionAuthToken } from "./config";
+import { getTwilioSmsSenderConfiguration } from "./health";
 
 export type SmsRecoveryDraft = {
   body: string;
@@ -16,17 +17,9 @@ export function createRecoverySmsDraft(input: { clinicName?: string | null; pati
 }
 
 function buildSmsEndpoint(connection: TwilioConnection) {
-  const env = getBackendEnv();
-
-  if (env.twilioMessagingServiceSid) {
-    return `https://api.twilio.com/2010-04-01/Accounts/${connection.account_sid}/Messages.json`;
-  }
-
-  if (env.twilioPhoneNumber) {
-    return `https://api.twilio.com/2010-04-01/Accounts/${connection.account_sid}/Messages.json`;
-  }
-
-  return null;
+  return getTwilioSmsSenderConfiguration(getBackendEnv())
+    ? `https://api.twilio.com/2010-04-01/Accounts/${connection.account_sid}/Messages.json`
+    : null;
 }
 
 export async function sendRecoverySms(input: {
@@ -55,10 +48,11 @@ export async function sendRecoverySms(input: {
   body.set("To", input.draft.to);
   body.set("Body", input.draft.body);
 
-  if (env.twilioMessagingServiceSid) {
-    body.set("MessagingServiceSid", env.twilioMessagingServiceSid);
-  } else if (env.twilioPhoneNumber) {
-    body.set("From", env.twilioPhoneNumber);
+  const sender = getTwilioSmsSenderConfiguration(env);
+  if (sender?.type === "messaging_service") {
+    body.set("MessagingServiceSid", sender.value);
+  } else if (sender?.type === "phone_number") {
+    body.set("From", sender.value);
   }
 
   const response = await fetch(endpoint, {

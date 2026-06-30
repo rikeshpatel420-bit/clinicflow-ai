@@ -695,6 +695,7 @@ export type Database = {
           id: string;
           clinic_id: string;
           call_id: string | null;
+          patient_id: string | null;
           lead_id: string | null;
           state:
             | "queued"
@@ -724,6 +725,7 @@ export type Database = {
           id?: string;
           clinic_id: string;
           call_id?: string | null;
+          patient_id?: string | null;
           lead_id?: string | null;
           state?:
             | "queued"
@@ -753,6 +755,7 @@ export type Database = {
           id?: string;
           clinic_id?: string;
           call_id?: string | null;
+          patient_id?: string | null;
           lead_id?: string | null;
           state?:
             | "queued"

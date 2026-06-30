@@ -119,7 +119,8 @@ export async function getTwilioSetupHealthForClinic(clinicId: string, options?: 
         connection.hasAuthToken &&
         connection.voice_number &&
         env.configEncryptionSecret &&
-        resolvedSiteUrlConfigured,
+        resolvedSiteUrlConfigured &&
+        !env.testMode,
     ),
     phoneNumberActive: Boolean(connection?.voice_number),
     smsWorking: Boolean(connection && connection.status === "active" && env.smsSenderConfigured),
@@ -151,7 +152,7 @@ export function getTwilioPublicHealth(baseUrlOverride?: string | null) {
   const env = getTwilioEnvHealth();
   const urls = buildWebhookUrls(baseUrlOverride);
   const resolvedSiteUrlConfigured = Boolean(baseUrlOverride ?? getBackendEnv().siteUrl);
-  const connected = env.configEncryptionSecret && env.smsSenderConfigured && resolvedSiteUrlConfigured;
+  const connected = env.configEncryptionSecret && env.smsSenderConfigured && resolvedSiteUrlConfigured && !env.testMode;
 
   return {
     connected,

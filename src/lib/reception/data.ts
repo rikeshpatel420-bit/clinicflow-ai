@@ -10,7 +10,7 @@ import type {
   SmsEvent,
   VoicemailMessage,
 } from "@/types/database";
-import { demoClinic } from "@/lib/dashboard/data";
+import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { classifyIntent, scoreLead, type EnquiryCategory } from "@/lib/ai/logic";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -234,6 +234,7 @@ const demoLiveSnapshot: LiveSnapshot = {
       clinic_id: demoClinic.id,
       call_id: "88888888-8888-4888-8888-888888888881",
       lead_id: "88888888-8888-4888-8888-888888888882",
+      patient_id: demoPatients[0]?.id ?? null,
       state: "sms_sent",
       channel: "sms",
       current_step: 2,

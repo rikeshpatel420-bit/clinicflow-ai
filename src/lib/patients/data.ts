@@ -12,6 +12,7 @@ export type PatientRecord = {
   created_at: string;
   email: string | null;
   full_name: string;
+  patient_id?: string | null;
   phone: string | null;
   preferred_name: string | null;
   notes: string | null;
@@ -136,6 +137,7 @@ function leadPreferredName(fullName: string) {
 
 function leadToPatientRecord(lead: PatientLead): PatientRecord {
   const fullName = leadName(lead);
+  const leadWithPatientId = lead as PatientLead & { patient_id?: string | null };
 
   return {
     clinic_id: lead.clinic_id,
@@ -143,6 +145,7 @@ function leadToPatientRecord(lead: PatientLead): PatientRecord {
     email: null,
     full_name: fullName,
     id: lead.id,
+    patient_id: leadWithPatientId.patient_id ?? null,
     phone: null,
     preferred_name: leadPreferredName(fullName),
     notes: lead.enquiry_summary,
@@ -321,15 +324,22 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
       .order("occurred_at", { ascending: false })
       .limit(20)
       .returns<SmsEvent[]>(),
-    supabase
-      .from("recovery_workflows")
-      .select("*")
-      .eq("clinic_id", membership.clinic_id)
-      .eq("lead_id", patientId)
-      .is("deleted_at", null)
-      .order("updated_at", { ascending: false })
-      .limit(10)
-      .returns<RecoveryWorkflow[]>(),
+    (() => {
+      const workflowQuery = supabase
+        .from("recovery_workflows")
+        .select("*")
+        .eq("clinic_id", membership.clinic_id)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(10);
+      const patientBridgeId = lead.patient_id;
+
+      if (patientBridgeId) {
+        return workflowQuery.or(`lead_id.eq.${patientId},patient_id.eq.${patientBridgeId}`).returns<RecoveryWorkflow[]>();
+      }
+
+      return workflowQuery.eq("lead_id", patientId).returns<RecoveryWorkflow[]>();
+    })(),
   ]);
 
   const relatedCalls = calls ?? [];

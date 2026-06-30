@@ -273,6 +273,7 @@ async function ensureRecoveryWorkflow(input: {
   call: Call;
   connection: TwilioConnection;
   lead: PatientLead | null;
+  patient: Patient | null;
 }) {
   const admin = createSupabaseAdminClient();
   const { data: existingWorkflow, error: existingWorkflowError } = await admin
@@ -288,6 +289,23 @@ async function ensureRecoveryWorkflow(input: {
   }
 
   if (existingWorkflow) {
+    if (input.patient && existingWorkflow.patient_id !== input.patient.id) {
+      const { data: updatedWorkflow, error: updateError } = await admin
+        .from("recovery_workflows")
+        .update({
+          patient_id: input.patient.id,
+        })
+        .eq("id", existingWorkflow.id)
+        .eq("clinic_id", input.connection.clinic_id)
+        .select("*")
+        .single<RecoveryWorkflow>();
+
+      return {
+        error: updateError?.message ?? null,
+        workflow: updatedWorkflow ?? { ...existingWorkflow, patient_id: input.patient.id },
+      };
+    }
+
     return { workflow: existingWorkflow, error: null };
   }
 
@@ -302,6 +320,7 @@ async function ensureRecoveryWorkflow(input: {
       lead_id: input.lead?.id ?? input.call.lead_id ?? null,
       max_steps: 3,
       next_action_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      patient_id: input.patient?.id ?? null,
       state: "queued",
     })
     .select("*")
@@ -719,10 +738,25 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
       call.lead_id = leadResult.lead.id;
     }
 
+    const patientBridgeResult = await ensurePatientProfileForCall({
+      callerNumber: classification.callerNumber,
+      clinicId: connection.clinic_id,
+      createdBy: connection.created_by,
+      lead: leadResult.lead,
+    });
+
+    if (patientBridgeResult.error) {
+      logTwilioError("patient_profile_refresh_failed", patientBridgeResult.error, {
+        callSid: call.provider_call_id ?? classification.callSid ?? call.id,
+        clinicId: connection.clinic_id,
+      });
+    }
+
     const workflowResult = await ensureRecoveryWorkflow({
       call: { ...call, lead_id: leadResult.lead?.id ?? call.lead_id ?? null },
       connection,
       lead: leadResult.lead,
+      patient: patientBridgeResult.patient,
     });
 
     if (workflowResult.error) {

@@ -107,8 +107,10 @@ function buildOpportunitiesFromLiveRows(input: {
 }): RecoveryOpportunityView[] {
   return input.leads
     .map((lead) => {
+      const leadWithPatientBridge = lead as PatientLead & { patient_id?: string | null };
+      const patientId = leadWithPatientBridge.patient_id ?? null;
       const call = input.calls.find((item) => item.lead_id === lead.id);
-      const workflow = input.workflows.find((item) => item.lead_id === lead.id || (call && item.call_id === call.id));
+      const workflow = input.workflows.find((item) => item.lead_id === lead.id || (patientId && item.patient_id === patientId) || (call && item.call_id === call.id));
 
       return {
         booked_at: lead.converted_at,
@@ -119,7 +121,7 @@ function buildOpportunitiesFromLiveRows(input: {
         id: lead.id,
         lost_reason: null,
         next_action: nextActionForLead(lead, workflow, call),
-        patient_id: null,
+        patient_id: patientId,
         priority_score: lead.lead_score,
         stage: stageFromLeadStatus(lead.status),
         updated_at: lead.updated_at,

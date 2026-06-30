@@ -18,6 +18,8 @@ export type BackendEnv = {
 };
 
 export function getBackendEnv(): BackendEnv {
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+
   return {
     cronSecret: process.env.CRON_SECRET,
     siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
@@ -34,7 +36,9 @@ export function getBackendEnv(): BackendEnv {
     twilioMessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
     twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
     twilioWebhookSigningSecret: process.env.TWILIO_WEBHOOK_SIGNING_SECRET,
-    twilioWebhookTestMode: process.env.TWILIO_WEBHOOK_TEST_MODE !== "false",
+    twilioWebhookTestMode: process.env.TWILIO_WEBHOOK_TEST_MODE
+      ? process.env.TWILIO_WEBHOOK_TEST_MODE !== "false"
+      : !isProduction,
   };
 }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import twilio from "twilio";
 
 function resolveTwilioPublicOrigin(url, headers) {
   const first = (value) => value?.split(",")[0]?.trim() ?? null;
@@ -18,38 +18,40 @@ function buildTwilioValidationUrl(url, headers) {
   return `${origin}${parsed.pathname}${parsed.search}`;
 }
 
-function buildTwilioSignaturePayload(url, formData) {
-  if (!formData) return url;
-  const params = Array.from(formData.entries())
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}${String(value)}`)
-    .join("");
-  return `${url}${params}`;
-}
+function formDataToTwilioParams(formData) {
+  const params = {};
+  const keys = [];
 
-function createTwilioRequestSignature(url, authToken, formData) {
-  return createHmac("sha1", authToken).update(buildTwilioSignaturePayload(url, formData), "utf8").digest("base64");
-}
+  for (const [key, value] of formData.entries()) {
+    keys.push(key);
+    const normalizedValue = typeof value === "string" ? value : String(value?.name ?? value);
+    const existing = params[key];
 
-function verifyTwilioSignature(url, headers, authToken, formData) {
-  const signature = headers.get("x-twilio-signature");
-  if (!signature) {
-    return false;
+    if (existing === undefined) {
+      params[key] = normalizedValue;
+      continue;
+    }
+
+    if (Array.isArray(existing)) {
+      existing.push(normalizedValue);
+      continue;
+    }
+
+    params[key] = [existing, normalizedValue];
   }
 
-  const expected = createTwilioRequestSignature(url, authToken, formData);
-  const expectedBytes = Buffer.from(expected, "utf8");
-  const providedBytes = Buffer.from(signature, "utf8");
-  return expectedBytes.length === providedBytes.length && timingSafeEqual(expectedBytes, providedBytes);
+  return { keys, params };
 }
 
 const authToken = "twilio-test-auth-token";
 const url = "https://www.clinicflowhq.co.uk/api/webhooks/twilio/voice?foo=bar";
 const formData = new FormData();
-formData.set("CallSid", "CA1234567890abcdef");
-formData.set("CallStatus", "ringing");
-formData.set("From", "+447700900123");
-formData.set("To", "+447853309452");
+formData.append("CallSid", "CA1234567890abcdef");
+formData.append("CallStatus", "ringing");
+formData.append("From", "+447700900123");
+formData.append("To", "+447853309452");
+formData.append("MediaUrl", "https://media.example/a.mp3");
+formData.append("MediaUrl", "https://media.example/b.mp3");
 
 const headers = new Headers({
   "x-forwarded-host": "www.clinicflowhq.co.uk",
@@ -59,12 +61,19 @@ const headers = new Headers({
 const resolvedUrl = buildTwilioValidationUrl(url, headers);
 assert.equal(resolvedUrl, url, "Production URL must preserve www and query strings");
 
-const validSignature = createTwilioRequestSignature(url, authToken, formData);
+const { keys, params } = formDataToTwilioParams(formData);
+assert.deepEqual(keys, ["CallSid", "CallStatus", "From", "To", "MediaUrl", "MediaUrl"], "Raw parameter keys must preserve duplicates");
+assert.deepEqual(params.MediaUrl, ["https://media.example/a.mp3", "https://media.example/b.mp3"], "Duplicate keys should remain available as arrays");
+
+const validSignature = twilio.getExpectedTwilioSignature(authToken, url, params);
 const invalidSignature = `${validSignature.slice(0, -2)}zz`;
 
-assert.equal(verifyTwilioSignature(url, new Headers({ ...Object.fromEntries(headers.entries()), "x-twilio-signature": validSignature }), authToken, formData), true, "A valid signature must pass");
-assert.equal(verifyTwilioSignature(url, new Headers({ ...Object.fromEntries(headers.entries()), "x-twilio-signature": invalidSignature }), authToken, formData), false, "An invalid signature must fail");
-assert.equal(buildTwilioValidationUrl("https://www.clinicflowhq.co.uk/api/webhooks/twilio/status", headers), "https://www.clinicflowhq.co.uk/api/webhooks/twilio/status");
+assert.equal(twilio.validateRequest(authToken, validSignature, url, params), true, "A valid signature must pass");
+assert.equal(twilio.validateRequest(authToken, invalidSignature, url, params), false, "An invalid signature must fail");
 assert.equal(buildTwilioValidationUrl("https://www.clinicflowhq.co.uk/api/webhooks/twilio/sms", headers), "https://www.clinicflowhq.co.uk/api/webhooks/twilio/sms");
+assert.equal(
+  buildTwilioValidationUrl("https://www.clinicflowhq.co.uk/api/webhooks/twilio/status", headers),
+  "https://www.clinicflowhq.co.uk/api/webhooks/twilio/status",
+);
 
 console.log("Twilio signature smoke test passed.");

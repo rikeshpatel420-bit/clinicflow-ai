@@ -13,6 +13,7 @@ export type BackendEnv = {
   twilioAuthToken?: string;
   twilioMessagingServiceSid?: string;
   twilioPhoneNumber?: string;
+  twilioWebhookDebugMode?: boolean;
   twilioWebhookSigningSecret?: string;
   twilioWebhookTestMode?: boolean;
 };
@@ -50,6 +51,7 @@ export function getBackendEnv(): BackendEnv {
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
     twilioMessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
     twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER,
+    twilioWebhookDebugMode: process.env.TWILIO_WEBHOOK_DEBUG ? process.env.TWILIO_WEBHOOK_DEBUG !== "false" : false,
     twilioWebhookSigningSecret: process.env.TWILIO_WEBHOOK_SIGNING_SECRET,
     twilioWebhookTestMode: process.env.TWILIO_WEBHOOK_TEST_MODE
       ? process.env.TWILIO_WEBHOOK_TEST_MODE !== "false"

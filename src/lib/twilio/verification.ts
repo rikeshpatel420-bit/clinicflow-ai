@@ -1,5 +1,5 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
+import twilio from "twilio";
 import { getBackendEnv } from "@/lib/backend/env";
 
 export type TwilioWebhookType = "missed-call" | "sms" | "status" | "voice" | "voicemail" | "unknown";
@@ -13,6 +13,7 @@ export type TwilioVerificationDiagnostics = {
   forwardedProto: string | null;
   hostHeader: string | null;
   parameterCount: number;
+  rawPostParameterKeys: string[];
   requestPath: string;
   requestUrl: string;
   resolvedPublicUrl: string;
@@ -33,6 +34,47 @@ export type TwilioVerificationResult = {
 
 function firstHeaderValue(value: string | null | undefined) {
   return value?.split(",")[0]?.trim() ?? null;
+}
+
+function formDataToTwilioParams(formData: FormData | null) {
+  const params: Record<string, string | string[]> = {};
+  const rawPostParameterKeys: string[] = [];
+
+  if (!formData) {
+    return { params, rawPostParameterKeys };
+  }
+
+  for (const [key, value] of formData.entries()) {
+    rawPostParameterKeys.push(key);
+    const normalizedValue = typeof value === "string" ? value : value instanceof File ? value.name : String(value);
+    const existing = params[key];
+
+    if (existing === undefined) {
+      params[key] = normalizedValue;
+      continue;
+    }
+
+    if (Array.isArray(existing)) {
+      existing.push(normalizedValue);
+      continue;
+    }
+
+    params[key] = [existing, normalizedValue];
+  }
+
+  return { params, rawPostParameterKeys };
+}
+
+function isWebhookDebugEnabled() {
+  return getBackendEnv().twilioWebhookDebugMode ?? false;
+}
+
+function logTwilioValidationDebug(details: Record<string, unknown>) {
+  if (!isWebhookDebugEnabled()) {
+    return;
+  }
+
+  console.info("[ClinicFlow Twilio]", "signature_validation_debug", JSON.stringify(details));
 }
 
 export function resolveTwilioPublicOrigin(request: NextRequest) {
@@ -66,24 +108,6 @@ export function buildTwilioValidationUrl(request: NextRequest) {
   return `${origin}${pathname}${search}`;
 }
 
-export function buildTwilioSignaturePayload(url: string, formData: FormData | null) {
-  if (!formData) {
-    return url;
-  }
-
-  const params = Array.from(formData.entries())
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([key, value]) => `${key}${String(value)}`)
-    .join("");
-
-  return `${url}${params}`;
-}
-
-export function createTwilioRequestSignature(url: string, authToken: string, formData: FormData | null) {
-  const payload = buildTwilioSignaturePayload(url, formData);
-  return createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
-}
-
 export async function verifyTwilioSignature(
   request: NextRequest,
   options?: {
@@ -97,7 +121,8 @@ export async function verifyTwilioSignature(
   const env = getBackendEnv();
   const requestUrl = new URL(request.url);
   const formData = options?.formData ?? (await request.clone().formData().catch(() => null));
-  const parameterCount = formData ? Array.from(formData.entries()).length : 0;
+  const { params, rawPostParameterKeys } = formDataToTwilioParams(formData);
+  const parameterCount = rawPostParameterKeys.length;
   const hostHeader = firstHeaderValue(request.headers.get("host"));
   const forwardedHost = firstHeaderValue(request.headers.get("x-forwarded-host"));
   const forwardedProto = firstHeaderValue(request.headers.get("x-forwarded-proto"));
@@ -116,6 +141,7 @@ export async function verifyTwilioSignature(
     forwardedProto,
     hostHeader,
     parameterCount,
+    rawPostParameterKeys,
     requestPath: requestUrl.pathname,
     requestUrl: requestUrl.toString(),
     resolvedPublicUrl,
@@ -155,6 +181,13 @@ export async function verifyTwilioSignature(
 
   const signature = request.headers.get("x-twilio-signature");
   if (!signature) {
+    logTwilioValidationDebug({
+      ...diagnosticsBase,
+      validationMethod: "twilio.validateRequest",
+      validationSignatureHeader: null,
+      validationResult: false,
+    });
+
     return {
       diagnostics: {
         ...diagnosticsBase,
@@ -166,24 +199,16 @@ export async function verifyTwilioSignature(
     };
   }
 
-  const expected = createTwilioRequestSignature(diagnosticsBase.resolvedPublicUrl, authToken, formData);
+  const isValid = twilio.validateRequest(authToken, signature, diagnosticsBase.resolvedPublicUrl, params);
+  logTwilioValidationDebug({
+    ...diagnosticsBase,
+    validationMethod: "twilio.validateRequest",
+    validationResult: isValid,
+    validationSignatureHeader: signature,
+    validationUrl: diagnosticsBase.resolvedPublicUrl,
+  });
 
-  try {
-    const expectedBytes = Buffer.from(expected, "utf8");
-    const providedBytes = Buffer.from(signature, "utf8");
-
-    if (expectedBytes.length !== providedBytes.length || !timingSafeEqual(expectedBytes, providedBytes)) {
-      return {
-        diagnostics: {
-          ...diagnosticsBase,
-          validationResult: "invalid",
-        },
-        isTestMode: false,
-        isValid: false,
-        reason: "Invalid Twilio signature.",
-      };
-    }
-  } catch {
+  if (!isValid) {
     return {
       diagnostics: {
         ...diagnosticsBase,

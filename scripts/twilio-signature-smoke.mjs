@@ -75,5 +75,9 @@ assert.equal(
   buildTwilioValidationUrl("https://www.clinicflowhq.co.uk/api/webhooks/twilio/status", headers),
   "https://www.clinicflowhq.co.uk/api/webhooks/twilio/status",
 );
+assert.equal(
+  buildTwilioValidationUrl("https://www.clinicflowhq.co.uk/api/webhooks/twilio/voice/speech", headers),
+  "https://www.clinicflowhq.co.uk/api/webhooks/twilio/voice/speech",
+);
 
 console.log("Twilio signature smoke test passed.");

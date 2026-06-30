@@ -58,39 +58,65 @@ function logTwilioVerificationFailure(event: string, verification: { diagnostics
   console.error("[ClinicFlow Twilio]", event, JSON.stringify({ ...verification.diagnostics, reason: verification.reason }));
 }
 
-function buildVoiceGreetingTwiml(input: { clinicName: string; voicemailUrl: string; voiceUrl: string }) {
+function truncateForSpeech(value: string, maxLength = 220) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
   const clinicName = escapeXml(input.clinicName);
-  const voiceUrl = escapeXml(input.voiceUrl);
-  const voicemailUrl = escapeXml(input.voicemailUrl);
+  const callerId = escapeXml(input.callerId);
+  const forwardToNumber = escapeXml(input.forwardToNumber);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${voiceUrl}" input="speech dtmf" method="POST" speechTimeout="auto" timeout="6">
-    <Say voice="alice">Thanks for calling ${clinicName}. We have logged your call. Tell us what you need, or press 1 to leave a voicemail.</Say>
-  </Gather>
-  <Redirect method="POST">${voicemailUrl}</Redirect>
+  <Say voice="alice">Sorry, ClinicFlow is having trouble right now for ${clinicName}. I'm connecting you to the team.</Say>
+  <Dial callerId="${callerId}" timeout="20">
+    <Number>${forwardToNumber}</Number>
+  </Dial>
 </Response>`;
 }
 
-function buildVoiceFollowUpTwiml(input: { clinicName: string }) {
+function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string; speechUrl: string }) {
   const clinicName = escapeXml(input.clinicName);
+  const speechUrl = escapeXml(input.speechUrl);
+  const callerId = escapeXml(input.callerId);
+  const forwardToNumber = escapeXml(input.forwardToNumber);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Thanks. We have logged your message for ${clinicName} and a member of the team will follow up shortly.</Say>
+  <Gather action="${speechUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
+    <Say voice="alice">Thanks for calling ${clinicName}. This is ClinicFlow AI. Please tell me the reason for your call after the beep.</Say>
+  </Gather>
+  <Say voice="alice">Sorry, I could not hear a response. I'm connecting you to the team now.</Say>
+  <Dial callerId="${callerId}" timeout="20">
+    <Number>${forwardToNumber}</Number>
+  </Dial>
+</Response>`;
+}
+
+function buildVoiceFollowUpTwiml(input: { clinicName: string; responseText: string }) {
+  const clinicName = escapeXml(input.clinicName);
+  const responseText = escapeXml(input.responseText);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">${responseText || `Thanks. We have logged your message for ${clinicName} and a member of the team will follow up shortly.`}</Say>
   <Pause length="1" />
   <Hangup />
 </Response>`;
 }
 
-function buildVoiceFailureTwiml(input: { clinicName: string; voicemailUrl: string }) {
-  const clinicName = escapeXml(input.clinicName);
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">Sorry, ClinicFlow could not complete the call right now for ${clinicName}. Please try again shortly or leave a voicemail after the tone.</Say>
-  <Redirect method="POST">${escapeXml(input.voicemailUrl)}</Redirect>
-</Response>`;
+function buildVoiceFailureTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
+  return buildVoiceFallbackTwiml({
+    callerId: input.callerId,
+    clinicName: input.clinicName,
+    forwardToNumber: input.forwardToNumber,
+  });
 }
 
 function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: string }) {
@@ -230,7 +256,7 @@ async function authenticateTwilioWebhook(request: NextRequest, webhookType: Twil
   if (!verification.isValid) {
     logTwilioVerificationFailure(`${webhookType}_signature_failed`, verification);
 
-    if (webhookType === "voice") {
+    if (webhookType === "voice" || webhookType === "speech") {
       return {
         errorResponse: new Response(buildInvalidVoiceTwiml(), {
           headers: {
@@ -430,6 +456,22 @@ function followUpPayloadFromVoicemail(input: TwilioExtendedWebhookPayload): Twil
   };
 }
 
+function buildSpeechResponseText(input: {
+  clinicName: string;
+  summary: Awaited<ReturnType<typeof refreshCallReceptionSummary>>["summary"] | null;
+}) {
+  const clinicPrefix = input.clinicName.trim() ? `Thanks for calling ${input.clinicName}.` : "Thanks for calling.";
+  const summaryText = input.summary
+    ? truncateForSpeech(
+        [input.summary.patientSummary, input.summary.followUpRecommendation]
+          .filter(Boolean)
+          .join(" "),
+      )
+    : "";
+
+  return truncateForSpeech([clinicPrefix, summaryText || "I've logged your call and the team will follow up shortly."].filter(Boolean).join(" "));
+}
+
 export async function handleTwilioVoiceWebhook(request: NextRequest) {
   const auth = await authenticateTwilioWebhook(request, "voice");
   if (!auth.ok) {
@@ -440,8 +482,10 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
   const receivedAt = new Date().toISOString();
   const eventId = payload.CallSid || payload.MessageSid || payload.RecordingSid || `voice-${connection.clinic_id}-${Date.now().toString(36)}`;
   const clinicName = await getClinicName(connection.clinic_id);
-  const voiceUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voice`;
-  const voicemailUrl = `${buildWebhookBaseUrl(request)}/api/twilio/voicemail`;
+  const baseUrl = buildWebhookBaseUrl(request);
+  const speechUrl = `${baseUrl}/api/webhooks/twilio/voice/speech`;
+  const callerId = connection.voice_number || payload.To || payload.Called || "";
+  const forwardToNumber = connection.forward_to_number || "";
 
   await recordWebhookEvent({
     clinicId: connection.clinic_id,
@@ -452,7 +496,17 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     providerEventId: payload.CallSid ?? null,
     receivedAt,
   });
-  const result = await processTwilioCallWebhook(payload);
+  const result = await processTwilioCallWebhook(
+    {
+      ...payload,
+      CallStatus: payload.CallStatus || "in-progress",
+      Direction: payload.Direction || "inbound",
+      To: payload.To || connection.voice_number,
+      Called: payload.Called || connection.voice_number,
+      From: payload.From || "",
+    },
+    { refreshSummary: false },
+  );
   if (!result.ok || !("call" in result) || !result.call) {
     logTwilioError("voice_failed", result.error ?? "Twilio voice webhook failed", {
       callSid: payload.CallSid,
@@ -472,7 +526,8 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     return new Response(
       buildVoiceFailureTwiml({
         clinicName,
-        voicemailUrl,
+        callerId,
+        forwardToNumber,
       }),
       {
         headers: {
@@ -503,80 +558,222 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     receivedAt,
   });
 
-  if (payload.Digits?.trim() === "1") {
-    return new Response(
-      buildVoicemailPromptTwiml({
-        clinicName,
-        voicemailUrl,
-      }),
-      {
-        headers: {
-          "Content-Type": "text/xml",
-          "X-ClinicFlow-Processed": String(result.ok),
-          "X-ClinicFlow-Test-Mode": String(testMode),
-        },
-        status: 200,
-      },
-    );
-  }
-
-  if (payload.SpeechResult?.trim() || payload.Digits?.trim()) {
-    const transcriptResult = await storeSpeechTranscript({
-      call: result.call,
-      connection,
-      payload,
-      source: "speech",
-    });
-
-    if (transcriptResult.error) {
-      await recordWebhookEvent({
-        clinicId: connection.clinic_id,
-        errorMessage: transcriptResult.error,
-        eventType: "twilio.voice.failed",
-        idempotencyKey: eventId,
-        payload,
-        processingStatus: "failed",
-        processedAt: new Date().toISOString(),
-        providerEventId: payload.CallSid ?? null,
-        receivedAt,
-      });
-      return new Response(
-        buildVoiceFailureTwiml({
-          clinicName,
-          voicemailUrl,
-        }),
-        {
-          headers: {
-            "Content-Type": "text/xml",
-            "X-ClinicFlow-Processed": "false",
-            "X-ClinicFlow-Test-Mode": String(testMode),
-          },
-          status: 200,
-        },
-      );
-    }
-
-    return new Response(buildVoiceFollowUpTwiml({ clinicName }), {
-      headers: {
-        "Content-Type": "text/xml",
-        "X-ClinicFlow-Processed": String(result.ok),
-        "X-ClinicFlow-Test-Mode": String(testMode),
-      },
-      status: 200,
-    });
-  }
-
   return new Response(
     buildVoiceGreetingTwiml({
       clinicName,
-      voiceUrl,
-      voicemailUrl,
+      callerId,
+      forwardToNumber,
+      speechUrl,
     }),
     {
       headers: {
         "Content-Type": "text/xml",
         "X-ClinicFlow-Processed": String(result.ok),
         "X-ClinicFlow-Test-Mode": String(testMode),
+      },
+      status: 200,
+    },
+  );
+}
+
+export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
+  const auth = await authenticateTwilioWebhook(request, "speech");
+  if (!auth.ok) {
+    return auth.errorResponse;
+  }
+
+  const receivedAt = new Date().toISOString();
+  const eventId = auth.payload.CallSid || auth.payload.MessageSid || `speech-${auth.connection.clinic_id}-${Date.now().toString(36)}`;
+  const clinicName = await getClinicName(auth.connection.clinic_id);
+  const callerId = auth.connection.voice_number || auth.payload.To || auth.payload.Called || "";
+  const forwardToNumber = auth.connection.forward_to_number || "";
+  const speechText = (auth.payload.SpeechResult || auth.payload.TranscriptionText || auth.payload.Digits || "").trim();
+
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.voice_speech.received",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "received",
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
+  });
+
+  if (!speechText) {
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.empty",
+      idempotencyKey: `${eventId}-empty`,
+      payload: auth.payload,
+      processingStatus: "ignored",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
+
+    return new Response(
+      buildVoiceFallbackTwiml({
+        clinicName,
+        callerId,
+        forwardToNumber,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "false",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  const processingResult = await processTwilioCallWebhook(
+    {
+      ...auth.payload,
+      CallStatus: auth.payload.CallStatus || "in-progress",
+      Direction: auth.payload.Direction || "inbound",
+      To: auth.payload.To || auth.connection.voice_number,
+      Called: auth.payload.Called || auth.connection.voice_number,
+      From: auth.payload.From || "",
+    },
+    { refreshSummary: false },
+  );
+
+  if (!processingResult.ok || !("call" in processingResult) || !processingResult.call) {
+    logTwilioError("voice_speech_failed", processingResult.error ?? "Twilio speech webhook failed", {
+      callSid: auth.payload.CallSid,
+      clinicId: auth.connection.clinic_id,
+    });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: processingResult.error ?? "Twilio speech webhook failed",
+      eventType: "twilio.voice_speech.failed",
+      idempotencyKey: eventId,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
+    return new Response(
+      buildVoiceFailureTwiml({
+        clinicName,
+        callerId,
+        forwardToNumber,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "false",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  const transcriptResult = await storeTwilioSpeechCapture({
+    call: processingResult.call,
+    connection: auth.connection,
+    payload: auth.payload,
+  });
+
+  if (transcriptResult.error) {
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: transcriptResult.error,
+      eventType: "twilio.voice_speech.failed",
+      idempotencyKey: `${eventId}-transcript`,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
+    return new Response(
+      buildVoiceFailureTwiml({
+        clinicName,
+        callerId,
+        forwardToNumber,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "false",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  const summaryRefresh = await refreshCallReceptionSummary({
+    call: processingResult.call,
+    clinicName: clinicName ?? "ClinicFlow clinic",
+    connection: auth.connection,
+    lead: processingResult.lead ?? null,
+  });
+
+  if (summaryRefresh.error || !summaryRefresh.summary) {
+    logTwilioError("voice_speech_summary_failed", summaryRefresh.error ?? "Missing AI summary for speech webhook", {
+      callSid: processingResult.call.provider_call_id ?? auth.payload.CallSid,
+      clinicId: auth.connection.clinic_id,
+    });
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      errorMessage: summaryRefresh.error ?? "Missing AI summary for speech webhook",
+      eventType: "twilio.voice_speech.failed",
+      idempotencyKey: `${eventId}-summary`,
+      payload: auth.payload,
+      processingStatus: "failed",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
+    return new Response(
+      buildVoiceFailureTwiml({
+        clinicName,
+        callerId,
+        forwardToNumber,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "false",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  const responseText = buildSpeechResponseText({
+    clinicName,
+    summary: summaryRefresh.summary,
+  });
+
+  await recordWebhookEvent({
+    clinicId: auth.connection.clinic_id,
+    eventType: "twilio.voice_speech.processed",
+    idempotencyKey: eventId,
+    payload: auth.payload,
+    processingStatus: "processed",
+    processedAt: new Date().toISOString(),
+    providerEventId: auth.payload.CallSid ?? null,
+    receivedAt,
+  });
+
+  return new Response(
+    buildVoiceFollowUpTwiml({
+      clinicName,
+      responseText,
+    }),
+    {
+      headers: {
+        "Content-Type": "text/xml",
+        "X-ClinicFlow-Processed": "true",
+        "X-ClinicFlow-Test-Mode": String(auth.testMode),
       },
       status: 200,
     },

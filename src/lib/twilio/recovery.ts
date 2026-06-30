@@ -809,7 +809,8 @@ export async function refreshCallReceptionSummary(input: {
   return { error: null, summary };
 }
 
-export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
+export async function processTwilioCallWebhook(payload: TwilioWebhookPayload, options?: { refreshSummary?: boolean }) {
+  const shouldRefreshSummary = options?.refreshSummary ?? true;
   const classification = classifyTwilioCall(payload);
   const connectionResult = await findTwilioConnectionForPayload(payload);
 
@@ -944,11 +945,31 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
       summary.smsEvent = smsResult.smsEvent;
     }
 
+    if (shouldRefreshSummary) {
+      const aiSummaryResult = await refreshCallReceptionSummary({
+        call: { ...call, lead_id: leadResult.lead?.id ?? call.lead_id ?? null },
+        clinicName: clinicName ?? "ClinicFlow clinic",
+        connection,
+        lead: leadResult.lead ?? null,
+      });
+
+      if (aiSummaryResult.error) {
+        logTwilioError("summary_refresh_failed", aiSummaryResult.error, {
+          callSid: call.provider_call_id ?? classification.callSid ?? call.id,
+          clinicId: connection.clinic_id,
+        });
+      }
+    }
+
+    return { ...summary, ok: true };
+  }
+
+  if (shouldRefreshSummary) {
     const aiSummaryResult = await refreshCallReceptionSummary({
-      call: { ...call, lead_id: leadResult.lead?.id ?? call.lead_id ?? null },
+      call,
       clinicName: clinicName ?? "ClinicFlow clinic",
       connection,
-      lead: leadResult.lead ?? null,
+      lead: null,
     });
 
     if (aiSummaryResult.error) {
@@ -957,22 +978,6 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
         clinicId: connection.clinic_id,
       });
     }
-
-    return { ...summary, ok: true };
-  }
-
-  const aiSummaryResult = await refreshCallReceptionSummary({
-    call,
-    clinicName: clinicName ?? "ClinicFlow clinic",
-    connection,
-    lead: null,
-  });
-
-  if (aiSummaryResult.error) {
-    logTwilioError("summary_refresh_failed", aiSummaryResult.error, {
-      callSid: call.provider_call_id ?? classification.callSid ?? call.id,
-      clinicId: connection.clinic_id,
-    });
   }
 
   return { ...baseSummary, call, ok: true };

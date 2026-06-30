@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import twilio from "twilio";
 import { getBackendEnv } from "@/lib/backend/env";
 
-export type TwilioWebhookType = "missed-call" | "sms" | "status" | "voice" | "voicemail" | "unknown";
+export type TwilioWebhookType = "missed-call" | "sms" | "speech" | "status" | "voice" | "voicemail" | "unknown";
 
 export type TwilioAuthTokenSource = "clinic-row" | "environment" | "missing";
 

@@ -168,14 +168,14 @@ async function upsertCallRecord(input: {
     provider: "twilio" as const,
     provider_call_id: input.callSid,
     recovery_next_action:
-      input.classification.isMissed || input.classification.isVoicemail || input.classification.isAbandoned
+      input.previousCall?.recovery_next_action ??
+      (input.classification.isMissed || input.classification.isVoicemail || input.classification.isAbandoned
         ? "Send a recovery SMS and wait for reply."
-        : "No recovery needed.",
+        : "No recovery needed."),
     recovery_status:
-      input.classification.isMissed || input.classification.isVoicemail || input.classification.isAbandoned
-        ? "queued"
-        : "closed",
-    recovery_updated_at: now,
+      input.previousCall?.recovery_status ??
+      (input.classification.isMissed || input.classification.isVoicemail || input.classification.isAbandoned ? "queued" : "closed"),
+    recovery_updated_at: input.previousCall?.recovery_updated_at ?? now,
     started_at: input.previousCall?.started_at ?? now,
     status: input.classification.finalStatus,
     updated_at: now,
@@ -274,7 +274,6 @@ async function ensureRecoveryWorkflow(input: {
   call: Call;
   connection: TwilioConnection;
   lead: PatientLead | null;
-  patient: Patient | null;
 }) {
   const admin = createSupabaseAdminClient();
   const { data: existingWorkflow, error: existingWorkflowError } = await admin
@@ -290,23 +289,6 @@ async function ensureRecoveryWorkflow(input: {
   }
 
   if (existingWorkflow) {
-    if (input.patient && existingWorkflow.patient_id !== input.patient.id) {
-      const { data: updatedWorkflow, error: updateError } = await admin
-        .from("recovery_workflows")
-        .update({
-          patient_id: input.patient.id,
-        })
-        .eq("id", existingWorkflow.id)
-        .eq("clinic_id", input.connection.clinic_id)
-        .select("*")
-        .single<RecoveryWorkflow>();
-
-      return {
-        error: updateError?.message ?? null,
-        workflow: updatedWorkflow ?? { ...existingWorkflow, patient_id: input.patient.id },
-      };
-    }
-
     return { workflow: existingWorkflow, error: null };
   }
 
@@ -321,7 +303,6 @@ async function ensureRecoveryWorkflow(input: {
       lead_id: input.lead?.id ?? input.call.lead_id ?? null,
       max_steps: 3,
       next_action_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      patient_id: input.patient?.id ?? null,
       state: "queued",
     })
     .select("*")
@@ -919,7 +900,6 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload, op
       call: { ...call, lead_id: leadResult.lead?.id ?? call.lead_id ?? null },
       connection,
       lead: leadResult.lead,
-      patient: patientBridgeResult.patient,
     });
 
     if (workflowResult.error) {

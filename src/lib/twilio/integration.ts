@@ -1,8 +1,22 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, CallRecording, CallTranscript, Json, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import { normalizePhoneNumber } from "./crypto";
 import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
 import { parseTwilioFormData, type TwilioWebhookPayload } from "./missed-call";
 import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "./recovery";
+import {
+  buildVoiceFollowUpPrompt,
+  buildVoiceGreetingMessage,
+  buildVoiceLeadSummary,
+  buildVoiceTranscriptSummary,
+  classifyTreatmentType,
+  classifyVoiceIntent,
+  extractVoiceCaptureDetails,
+  estimateVoiceUrgency,
+  treatmentLabel,
+  type VoiceCaptureDetails,
+  type VoiceIntent,
+} from "./voice-triage";
 import { resolveTwilioPublicOrigin, verifyTwilioSignature, type TwilioWebhookType } from "./verification";
 import type { NextRequest } from "next/server";
 
@@ -58,15 +72,6 @@ function logTwilioVerificationFailure(event: string, verification: { diagnostics
   console.error("[ClinicFlow Twilio]", event, JSON.stringify({ ...verification.diagnostics, reason: verification.reason }));
 }
 
-function truncateForSpeech(value: string, maxLength = 220) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
-}
-
 function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
   const clinicName = escapeXml(input.clinicName);
   const callerId = escapeXml(input.callerId);
@@ -90,7 +95,7 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${speechUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
-    <Say voice="alice">Thanks for calling ${clinicName}. This is ClinicFlow AI. Please tell me the reason for your call after the beep.</Say>
+    <Say voice="alice">${buildVoiceGreetingMessage(clinicName)}</Say>
   </Gather>
   <Say voice="alice">Sorry, I could not hear a response. I'm connecting you to the team now.</Say>
   <Dial callerId="${callerId}" timeout="20">
@@ -117,6 +122,20 @@ function buildVoiceFailureTwiml(input: { clinicName: string; callerId: string; f
     clinicName: input.clinicName,
     forwardToNumber: input.forwardToNumber,
   });
+}
+
+function buildVoiceEmergencyTransferTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
+  const clinicName = escapeXml(input.clinicName);
+  const callerId = escapeXml(input.callerId);
+  const forwardToNumber = escapeXml(input.forwardToNumber);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">I am sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}. I am connecting you to the team immediately for human support.</Say>
+  <Dial callerId="${callerId}" timeout="20">
+    <Number>${forwardToNumber}</Number>
+  </Dial>
+</Response>`;
 }
 
 function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: string }) {
@@ -456,20 +475,434 @@ function followUpPayloadFromVoicemail(input: TwilioExtendedWebhookPayload): Twil
   };
 }
 
-function buildSpeechResponseText(input: {
-  clinicName: string;
-  summary: Awaited<ReturnType<typeof refreshCallReceptionSummary>>["summary"] | null;
-}) {
-  const clinicPrefix = input.clinicName.trim() ? `Thanks for calling ${input.clinicName}.` : "Thanks for calling.";
-  const summaryText = input.summary
-    ? truncateForSpeech(
-        [input.summary.patientSummary, input.summary.followUpRecommendation]
-          .filter(Boolean)
-          .join(" "),
-      )
-    : "";
+function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails) {
+  if (details.breathingOrSwallowingIssue || intent === "dental_emergency" || intent === "complaint") {
+    return "queued" as const;
+  }
 
-  return truncateForSpeech([clinicPrefix, summaryText || "I've logged your call and the team will follow up shortly."].filter(Boolean).join(" "));
+  return "drafted" as const;
+}
+
+function voiceWorkflowStateFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails) {
+  if (details.breathingOrSwallowingIssue || intent === "complaint") {
+    return "awaiting_staff_approval" as const;
+  }
+
+  return "drafted" as const;
+}
+
+function voicePriorityFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails) {
+  if (details.breathingOrSwallowingIssue || intent === "dental_emergency" || intent === "complaint") {
+    return "urgent" as const;
+  }
+
+  if (intent === "pricing_enquiry" || intent === "message_for_reception") {
+    return "normal" as const;
+  }
+
+  return "high" as const;
+}
+
+function voiceLeadStatusFromIntent(intent: VoiceIntent) {
+  if (intent === "complaint" || intent === "dental_emergency") {
+    return "contacted" as const;
+  }
+
+  if (intent === "pricing_enquiry" || intent === "message_for_reception" || intent === "other_unclear") {
+    return "new" as const;
+  }
+
+  return "contacted" as const;
+}
+
+function voiceEstimatedValuePenceFromIntent(intent: VoiceIntent, treatmentType: ReturnType<typeof classifyTreatmentType>) {
+  if (intent === "dental_emergency") return 18000;
+  if (intent === "new_patient_appointment") return 9000;
+  if (intent === "existing_patient_appointment") return 7000;
+  if (intent === "cancellation_reschedule") return 0;
+  if (intent === "pricing_enquiry") return 0;
+  if (intent === "complaint") return 0;
+  if (intent === "message_for_reception") return 0;
+
+  switch (treatmentType) {
+    case "implant":
+      return 65000;
+    case "invisalign_orthodontics":
+      return 45000;
+    case "whitening":
+      return 7000;
+    case "hygiene":
+      return 9000;
+    case "extraction":
+      return 12000;
+    case "wisdom_tooth":
+      return 12000;
+    case "sedation":
+      return 22000;
+    case "cosmetic_bonding":
+      return 15000;
+    case "check_up":
+      return 4500;
+    default:
+      return 8000;
+  }
+}
+
+function buildVoiceNextAction(intent: VoiceIntent, details: VoiceCaptureDetails, fallbackPrompt: string) {
+  if (details.breathingOrSwallowingIssue) {
+    return "Immediate emergency escalation required. Forward to the practice and advise urgent emergency care.";
+  }
+
+  switch (intent) {
+    case "dental_emergency":
+      return "Urgent callback needed. Offer the earliest emergency review and keep a clinician informed.";
+    case "new_patient_appointment":
+      return "Confirm the details and offer the earliest new patient appointment.";
+    case "existing_patient_appointment":
+      return "Check the diary and arrange a callback or appointment slot for the existing patient.";
+    case "cancellation_reschedule":
+      return "Confirm the cancellation or offer a replacement slot for rescheduling.";
+    case "treatment_enquiry":
+      return "Capture the treatment details and arrange a consultation callback.";
+    case "pricing_enquiry":
+      return "Call back with general pricing guidance and offer a consultation.";
+    case "complaint":
+      return "Escalate to the practice manager and call back today.";
+    case "message_for_reception":
+      return "Pass the message to reception and confirm the contact details.";
+    default:
+      return fallbackPrompt;
+  }
+}
+
+async function upsertVoiceTriageArtifacts(input: {
+  call: Call;
+  clinicName: string;
+  connection: TwilioConnection;
+  callerNumber: string | null;
+  details: VoiceCaptureDetails;
+  intent: VoiceIntent;
+  stage: "triage" | "collect-details";
+  speechText: string;
+  treatmentType: ReturnType<typeof classifyTreatmentType>;
+}) {
+  const admin = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const urgency = estimateVoiceUrgency(input.intent, input.details);
+  const leadSummary = buildVoiceLeadSummary({
+    callSid: input.call.provider_call_id ?? input.call.id,
+    callerNumber: input.callerNumber,
+    clinicName: input.clinicName,
+    details: input.details,
+    intent: input.intent,
+    treatmentType: input.treatmentType,
+  });
+  const transcriptSummary = buildVoiceTranscriptSummary({
+    details: input.details,
+    intent: input.intent,
+    treatmentType: input.treatmentType,
+    urgency,
+  });
+  const effectivePhone = normalizePhoneNumber(input.details.mobileNumber || input.callerNumber);
+  const patientName = input.details.fullName ?? (input.callerNumber ? `Caller ending ${input.callerNumber.slice(-4)}` : "Incoming caller");
+
+  const { data: transcriptData, error: transcriptError } = await admin
+    .from("call_transcripts")
+    .upsert(
+      {
+        call_id: input.call.id,
+        clinic_id: input.connection.clinic_id,
+        confidence: 0.88,
+        language_code: "en-GB",
+        provider: "twilio",
+        provider_transcript_id: `${input.call.provider_call_id ?? input.call.id}-voice-${input.stage}`,
+        source: "speech",
+        status: "ready",
+        summary: transcriptSummary,
+        transcript_text: input.speechText,
+      },
+      { onConflict: "provider_transcript_id" },
+    )
+    .select("*")
+    .single<CallTranscript>();
+
+  let transcript: CallTranscript | null = transcriptData ?? null;
+  if (transcriptError) {
+    if (isMissingRelationError(transcriptError)) {
+      logTwilioError("voice_transcript_table_missing", transcriptError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+      transcript = null;
+    } else {
+      return { error: transcriptError.message, lead: null as null, patient: null as null, transcript: null as null, workflow: null as null, urgency };
+    }
+  }
+
+  const leadPayload = {
+    clinic_id: input.connection.clinic_id,
+    created_by: input.connection.created_by,
+    estimated_value_pence: voiceEstimatedValuePenceFromIntent(input.intent, input.treatmentType),
+    enquiry_summary: leadSummary,
+    gdpr_lawful_basis: "legitimate_interest",
+    lead_score: urgency,
+    marketing_consent: false,
+    next_follow_up_at: detailsFollowUpAt(input.intent, input.details),
+    owner_user_id: input.connection.created_by,
+    priority: voicePriorityFromIntent(input.intent, input.details),
+    source: "phone" as const,
+    status: voiceLeadStatusFromIntent(input.intent),
+    updated_by: input.connection.created_by,
+  };
+
+  const callKey = input.call.provider_call_id ?? input.call.id;
+  const { data: existingLead, error: existingLeadError } = await admin
+    .from("patient_leads")
+    .select("*")
+    .eq("clinic_id", input.connection.clinic_id)
+    .eq("source", "phone")
+    .ilike("enquiry_summary", `%Call SID: ${callKey}.%`)
+    .maybeSingle();
+
+  if (existingLeadError) {
+    if (isMissingRelationError(existingLeadError)) {
+      logTwilioError("voice_lead_table_missing", existingLeadError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return { error: existingLeadError.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+    }
+  }
+
+  const leadResult = existingLead
+    ? await admin
+        .from("patient_leads")
+        .update(leadPayload)
+        .eq("id", existingLead.id)
+        .eq("clinic_id", input.connection.clinic_id)
+        .select("*")
+        .single()
+    : await admin.from("patient_leads").insert(leadPayload).select("*").single();
+
+  if (leadResult.error) {
+    if (isMissingRelationError(leadResult.error)) {
+      logTwilioError("voice_lead_write_table_missing", leadResult.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return { error: leadResult.error.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+    }
+  }
+
+  const lead = leadResult.data ?? existingLead ?? null;
+
+  const { data: existingPatient, error: existingPatientError } = effectivePhone
+    ? await admin.from("patients").select("*").eq("clinic_id", input.connection.clinic_id).eq("phone", effectivePhone).maybeSingle()
+    : { data: null as null, error: null as null };
+
+  if (existingPatientError) {
+    if (isMissingRelationError(existingPatientError)) {
+      logTwilioError("voice_patient_table_missing", existingPatientError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return { error: existingPatientError.message, lead: lead ?? null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+    }
+  }
+
+  const patientPayload = {
+    clinic_id: input.connection.clinic_id,
+    created_by: input.connection.created_by,
+    email: input.details.email ?? null,
+    full_name: patientName,
+    notes: leadSummary,
+    phone: effectivePhone,
+    source: "phone" as const,
+    status: "lead" as const,
+    updated_by: input.connection.created_by,
+  };
+
+  const patientResult = effectivePhone
+    ? existingPatient
+      ? await admin
+          .from("patients")
+          .update(patientPayload)
+          .eq("id", existingPatient.id)
+          .eq("clinic_id", input.connection.clinic_id)
+          .select("*")
+          .single()
+      : await admin.from("patients").insert(patientPayload).select("*").single()
+    : { data: null as null, error: null as null };
+
+  if (patientResult.error) {
+    if (isMissingRelationError(patientResult.error)) {
+      logTwilioError("voice_patient_write_table_missing", patientResult.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return { error: patientResult.error.message, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+    }
+  }
+  const patient = patientResult.data ?? existingPatient ?? null;
+
+  const workflowState = voiceWorkflowStateFromIntent(input.intent, input.details);
+  const nextAction = buildVoiceNextAction(
+    input.intent,
+    input.details,
+    "Capture the details and hand them to the reception team.",
+  );
+  const nextActionAt = input.details.breathingOrSwallowingIssue ? now : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  const existingWorkflow = await admin
+    .from("recovery_workflows")
+    .select("*")
+    .eq("clinic_id", input.connection.clinic_id)
+    .eq("call_id", input.call.id)
+    .is("deleted_at", null)
+    .maybeSingle<RecoveryWorkflow>();
+
+  if (existingWorkflow.error) {
+    if (isMissingRelationError(existingWorkflow.error)) {
+      logTwilioError("voice_workflow_table_missing", existingWorkflow.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return { error: existingWorkflow.error.message, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
+    }
+  }
+
+  const workflowPayload = {
+    assigned_user_id: input.connection.created_by,
+    call_id: input.call.id,
+    channel: "phone" as const,
+    clinic_id: input.connection.clinic_id,
+    current_step: input.details.breathingOrSwallowingIssue ? 2 : 1,
+    lead_id: lead?.id ?? input.call.lead_id ?? null,
+    max_steps: 3,
+    next_action_at: nextActionAt,
+    state: workflowState,
+  };
+
+  const workflowResult = existingWorkflow.data
+    ? await admin
+        .from("recovery_workflows")
+        .update({
+          ...workflowPayload,
+          current_step: Math.max(existingWorkflow.data.current_step, workflowPayload.current_step),
+        })
+        .eq("id", existingWorkflow.data.id)
+        .eq("clinic_id", input.connection.clinic_id)
+        .select("*")
+        .single<RecoveryWorkflow>()
+    : await admin.from("recovery_workflows").insert(workflowPayload).select("*").single<RecoveryWorkflow>();
+
+  if (workflowResult.error) {
+    if (isMissingRelationError(workflowResult.error)) {
+      logTwilioError("voice_workflow_write_table_missing", workflowResult.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+      });
+    } else {
+      return {
+        error: workflowResult.error.message,
+        lead: lead ?? null,
+        patient: patient ?? existingPatient ?? null,
+        transcript: transcript ?? null,
+        workflow: null as null,
+        urgency,
+      };
+    }
+  }
+
+  const callStatus = input.details.breathingOrSwallowingIssue ? "answered" : "answered";
+  const callRecoveryStatus = voiceRecoveryStatusFromIntent(input.intent, input.details);
+  const { data: updatedCall, error: callUpdateError } = await admin
+    .from("calls")
+    .update({
+      ended_at: null,
+      lead_id: lead?.id ?? input.call.lead_id ?? null,
+      recovery_next_action: nextAction,
+      recovery_status: callRecoveryStatus,
+      recovery_updated_at: now,
+      status: callStatus,
+      updated_at: now,
+    })
+    .eq("id", input.call.id)
+    .eq("clinic_id", input.connection.clinic_id)
+    .select("*")
+    .single<Call>();
+
+  if (callUpdateError) {
+    return {
+      error: callUpdateError.message,
+      lead: lead ?? null,
+      patient: patient ?? existingPatient ?? null,
+      transcript: transcript ?? null,
+      workflow: workflowResult.data ?? existingWorkflow.data ?? null,
+      urgency,
+    };
+  }
+
+  return {
+    error: null,
+    lead: lead ?? null,
+    patient: patient ?? existingPatient ?? null,
+    transcript: transcript ?? null,
+    workflow: workflowResult.data ?? existingWorkflow.data ?? null,
+    updatedCall: updatedCall ?? input.call,
+    urgency,
+  };
+}
+
+function detailsFollowUpAt(intent: VoiceIntent, details: VoiceCaptureDetails) {
+  if (details.breathingOrSwallowingIssue || intent === "dental_emergency") {
+    return new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  }
+
+  if (intent === "complaint") {
+    return new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  }
+
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+}
+
+function voiceCompletionResponseText(input: {
+  clinicName: string;
+  details: VoiceCaptureDetails;
+  intent: VoiceIntent;
+  treatmentType: ReturnType<typeof classifyTreatmentType>;
+}) {
+  const clinicPrefix = `Thanks. I have captured your details for ${input.clinicName}.`;
+
+  if (input.details.breathingOrSwallowingIssue) {
+    return `${clinicPrefix} Because you mentioned breathing or swallowing difficulty, this needs urgent emergency care now. I am connecting you to the team immediately.`;
+  }
+
+  switch (input.intent) {
+    case "dental_emergency":
+      return `${clinicPrefix} This is marked as urgent and the team will confirm the earliest emergency callback or slot.`;
+    case "new_patient_appointment":
+      return `${clinicPrefix} The team will confirm the appointment request and follow up with the next available step.`;
+    case "existing_patient_appointment":
+      return `${clinicPrefix} The team will review your details and confirm the best appointment option.`;
+    case "cancellation_reschedule":
+      return `${clinicPrefix} The team will confirm the cancellation or reschedule request.`;
+    case "treatment_enquiry":
+      return `${clinicPrefix} Your ${treatmentLabel(input.treatmentType).toLowerCase()} enquiry has been noted and the team will arrange the next step.`;
+    case "pricing_enquiry":
+      return `${clinicPrefix} Prices vary depending on clinical assessment, and the team will contact you with the right options.`;
+    case "complaint":
+      return `${clinicPrefix} I am sorry about that, and the practice manager will review it and call you back.`;
+    case "message_for_reception":
+      return `${clinicPrefix} I will pass your message to reception and the team will follow up.`;
+    default:
+      return `${clinicPrefix} The team will review the message and confirm the next step.`;
+  }
 }
 
 export async function handleTwilioVoiceWebhook(request: NextRequest) {
@@ -558,6 +991,60 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     receivedAt,
   });
 
+  const voiceWorkflowNextAction = "Await the caller's reason for calling.";
+  const voiceWorkflowState = "drafted" as const;
+  const voiceWorkflowResult = await createSupabaseAdminClient()
+    .from("recovery_workflows")
+    .select("*")
+    .eq("clinic_id", connection.clinic_id)
+    .eq("call_id", result.call.id)
+    .is("deleted_at", null)
+    .maybeSingle<RecoveryWorkflow>();
+
+  if (voiceWorkflowResult.error) {
+    logTwilioError("voice_workflow_lookup_failed", voiceWorkflowResult.error, {
+      callSid: result.call.provider_call_id ?? payload.CallSid,
+      clinicId: connection.clinic_id,
+    });
+  }
+
+  const voiceWorkflowPayload = {
+    assigned_user_id: connection.created_by,
+    call_id: result.call.id,
+    channel: "phone" as const,
+    clinic_id: connection.clinic_id,
+    current_step: 1,
+    lead_id: result.call.lead_id ?? null,
+    max_steps: 3,
+    next_action_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    state: voiceWorkflowState,
+  };
+
+  if (voiceWorkflowResult.data) {
+    await createSupabaseAdminClient()
+      .from("recovery_workflows")
+      .update({
+        ...voiceWorkflowPayload,
+        current_step: Math.max(voiceWorkflowResult.data.current_step, voiceWorkflowPayload.current_step),
+      })
+      .eq("id", voiceWorkflowResult.data.id)
+      .eq("clinic_id", connection.clinic_id);
+  } else {
+    await createSupabaseAdminClient().from("recovery_workflows").insert(voiceWorkflowPayload);
+  }
+
+  await createSupabaseAdminClient()
+    .from("calls")
+    .update({
+      recovery_next_action: voiceWorkflowNextAction,
+      recovery_status: voiceWorkflowState,
+      recovery_updated_at: new Date().toISOString(),
+      status: "answered",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", result.call.id)
+    .eq("clinic_id", connection.clinic_id);
+
   return new Response(
     buildVoiceGreetingTwiml({
       clinicName,
@@ -588,11 +1075,13 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   const callerId = auth.connection.voice_number || auth.payload.To || auth.payload.Called || "";
   const forwardToNumber = auth.connection.forward_to_number || "";
   const speechText = (auth.payload.SpeechResult || auth.payload.TranscriptionText || auth.payload.Digits || "").trim();
+  const stage = new URL(request.url).searchParams.get("stage") ?? "triage";
+  const stageEventId = `${eventId}-${stage}`;
 
   await recordWebhookEvent({
     clinicId: auth.connection.clinic_id,
     eventType: "twilio.voice_speech.received",
-    idempotencyKey: eventId,
+    idempotencyKey: stageEventId,
     payload: auth.payload,
     processingStatus: "received",
     providerEventId: auth.payload.CallSid ?? null,
@@ -603,7 +1092,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     await recordWebhookEvent({
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.empty",
-      idempotencyKey: `${eventId}-empty`,
+      idempotencyKey: `${stageEventId}-empty`,
       payload: auth.payload,
       processingStatus: "ignored",
       processedAt: new Date().toISOString(),
@@ -628,6 +1117,32 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     );
   }
 
+  const intent = classifyVoiceIntent(speechText);
+  const treatmentType = classifyTreatmentType(speechText);
+  const details = extractVoiceCaptureDetails(speechText);
+
+  if (details.wantsHuman) {
+    await recordWebhookEvent({
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.forwarded",
+      idempotencyKey: `${stageEventId}-human`,
+      payload: auth.payload,
+      processingStatus: "ignored",
+      processedAt: new Date().toISOString(),
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+    });
+
+    return new Response(buildVoiceFallbackTwiml({ clinicName, callerId, forwardToNumber }), {
+      headers: {
+        "Content-Type": "text/xml",
+        "X-ClinicFlow-Processed": "false",
+        "X-ClinicFlow-Test-Mode": String(auth.testMode),
+      },
+      status: 200,
+    });
+  }
+
   const processingResult = await processTwilioCallWebhook(
     {
       ...auth.payload,
@@ -649,7 +1164,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       clinicId: auth.connection.clinic_id,
       errorMessage: processingResult.error ?? "Twilio speech webhook failed",
       eventType: "twilio.voice_speech.failed",
-      idempotencyKey: eventId,
+      idempotencyKey: `${stageEventId}-failed`,
       payload: auth.payload,
       processingStatus: "failed",
       processedAt: new Date().toISOString(),
@@ -673,18 +1188,30 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     );
   }
 
-  const transcriptResult = await storeTwilioSpeechCapture({
+  const artifactResult = await upsertVoiceTriageArtifacts({
     call: processingResult.call,
+    callerNumber: auth.payload.From || null,
+    clinicName: clinicName ?? "ClinicFlow clinic",
     connection: auth.connection,
-    payload: auth.payload,
+    details,
+    intent,
+    stage: stage === "collect-details" ? "collect-details" : "triage",
+    speechText,
+    treatmentType,
   });
 
-  if (transcriptResult.error) {
+  if (artifactResult.error || !artifactResult.updatedCall) {
+    const errorMessage = artifactResult.error ?? "Unable to store the voice triage details.";
+    logTwilioError("voice_triage_failed", errorMessage, {
+      callSid: processingResult.call.provider_call_id ?? auth.payload.CallSid,
+      clinicId: auth.connection.clinic_id,
+      intent,
+    });
     await recordWebhookEvent({
       clinicId: auth.connection.clinic_id,
-      errorMessage: transcriptResult.error,
+      errorMessage,
       eventType: "twilio.voice_speech.failed",
-      idempotencyKey: `${eventId}-transcript`,
+      idempotencyKey: `${stageEventId}-triage`,
       payload: auth.payload,
       processingStatus: "failed",
       processedAt: new Date().toISOString(),
@@ -692,7 +1219,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       receivedAt,
     });
     return new Response(
-      buildVoiceFailureTwiml({
+      buildVoiceFallbackTwiml({
         clinicName,
         callerId,
         forwardToNumber,
@@ -709,22 +1236,22 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   }
 
   const summaryRefresh = await refreshCallReceptionSummary({
-    call: processingResult.call,
+    call: artifactResult.updatedCall,
     clinicName: clinicName ?? "ClinicFlow clinic",
     connection: auth.connection,
-    lead: processingResult.lead ?? null,
+    lead: artifactResult.lead ?? null,
   });
 
   if (summaryRefresh.error || !summaryRefresh.summary) {
     logTwilioError("voice_speech_summary_failed", summaryRefresh.error ?? "Missing AI summary for speech webhook", {
-      callSid: processingResult.call.provider_call_id ?? auth.payload.CallSid,
+      callSid: artifactResult.updatedCall.provider_call_id ?? auth.payload.CallSid,
       clinicId: auth.connection.clinic_id,
     });
     await recordWebhookEvent({
       clinicId: auth.connection.clinic_id,
       errorMessage: summaryRefresh.error ?? "Missing AI summary for speech webhook",
       eventType: "twilio.voice_speech.failed",
-      idempotencyKey: `${eventId}-summary`,
+      idempotencyKey: `${stageEventId}-summary`,
       payload: auth.payload,
       processingStatus: "failed",
       processedAt: new Date().toISOString(),
@@ -748,15 +1275,21 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     );
   }
 
-  const responseText = buildSpeechResponseText({
-    clinicName,
-    summary: summaryRefresh.summary,
-  });
+  const nextPrompt = buildVoiceFollowUpPrompt(intent);
+  const followUpResponseText =
+    stage === "collect-details"
+      ? voiceCompletionResponseText({
+          clinicName: clinicName ?? "ClinicFlow clinic",
+          details,
+          intent,
+          treatmentType,
+        })
+      : nextPrompt;
 
   await recordWebhookEvent({
     clinicId: auth.connection.clinic_id,
-    eventType: "twilio.voice_speech.processed",
-    idempotencyKey: eventId,
+    eventType: stage === "collect-details" ? "twilio.voice_speech.completed" : "twilio.voice_speech.triaged",
+    idempotencyKey: stageEventId,
     payload: auth.payload,
     processingStatus: "processed",
     processedAt: new Date().toISOString(),
@@ -764,10 +1297,52 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     receivedAt,
   });
 
+  if (details.breathingOrSwallowingIssue) {
+    return new Response(
+      buildVoiceEmergencyTransferTwiml({
+        clinicName,
+        callerId,
+        forwardToNumber,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  if (stage !== "collect-details" && !details.breathingOrSwallowingIssue) {
+    const followUpUrl = `${buildWebhookBaseUrl(request)}/api/webhooks/twilio/voice/speech?stage=collect-details`;
+    return new Response(
+      `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather action="${followUpUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
+    <Say voice="alice">${followUpResponseText}</Say>
+  </Gather>
+  <Say voice="alice">I'm connecting you to the team now.</Say>
+  <Dial callerId="${escapeXml(callerId)}" timeout="20">
+    <Number>${escapeXml(forwardToNumber)}</Number>
+  </Dial>
+</Response>`,
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
   return new Response(
     buildVoiceFollowUpTwiml({
       clinicName,
-      responseText,
+      responseText: followUpResponseText,
     }),
     {
       headers: {

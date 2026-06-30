@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import type { Call, CallRecording, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
+import { classifyVoiceIntent, extractVoiceCaptureDetails, estimateVoiceUrgency, voiceIntentLabel } from "@/lib/twilio/voice-triage";
 import { demoClinic } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -29,12 +30,17 @@ type LiveCallRow = Pick<
   | "deleted_at"
 >;
 
+type LiveTranscriptRow = Pick<CallTranscript, "call_id" | "summary" | "transcript_text" | "source" | "updated_at">;
+
 type CallLead = Pick<PatientLead, "enquiry_summary" | "estimated_value_pence" | "id" | "priority" | "source" | "status">;
 
 export type CallRecord = LiveCallRow & {
   callerLabel: string;
   estimatedValuePence: number | null;
+  intentLabel: string | null;
   leadSummary: string | null;
+  transcriptPreview: string | null;
+  urgencyScore: number | null;
 };
 
 export type CallListData = {
@@ -82,8 +88,11 @@ export const demoCalls: CallRecord[] = [
     recovery_next_action: "Draft recovery SMS for staff review.",
     recovery_status: "queued",
     recovery_updated_at: now,
+    intentLabel: "New patient appointment",
     started_at: now,
     status: "missed",
+    transcriptPreview: "Caller asked for the next available consultation and left a mobile number.",
+    urgencyScore: 68,
     updated_at: now,
   },
   {
@@ -106,8 +115,11 @@ export const demoCalls: CallRecord[] = [
     recovery_next_action: "No recovery needed.",
     recovery_status: "closed",
     recovery_updated_at: now,
+    intentLabel: "Cancellation or reschedule",
     started_at: now,
     status: "answered",
+    transcriptPreview: "Patient asked to move an existing appointment to next week.",
+    urgencyScore: 56,
     updated_at: now,
   },
 ];
@@ -136,16 +148,33 @@ function callerLabel(call: LiveCallRow, lead?: CallLead) {
   return "Unknown caller";
 }
 
-function enrichCalls(calls: LiveCallRow[], leads: CallLead[]): CallRecord[] {
+function transcriptPreviewFromTranscript(transcript?: LiveTranscriptRow | null) {
+  const text = transcript?.transcript_text?.trim() || transcript?.summary?.trim() || null;
+  if (!text) {
+    return null;
+  }
+
+  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+}
+
+function enrichCalls(calls: LiveCallRow[], leads: CallLead[], transcriptsByCallId: Map<string, LiveTranscriptRow>): CallRecord[] {
   const leadsById = new Map(leads.map((lead) => [lead.id, lead]));
 
   return calls.map((call) => {
     const lead = call.lead_id ? leadsById.get(call.lead_id) : undefined;
+    const transcript = transcriptsByCallId.get(call.id) ?? null;
+    const transcriptPreview = transcriptPreviewFromTranscript(transcript);
+    const sourceText = [lead?.enquiry_summary, transcriptPreview].filter(Boolean).join(" ");
+    const intent = classifyVoiceIntent(sourceText);
+    const urgencyDetails = extractVoiceCaptureDetails(sourceText);
     return {
       ...call,
       callerLabel: callerLabel(call, lead),
       estimatedValuePence: lead?.estimated_value_pence ?? null,
+      intentLabel: voiceIntentLabel(intent),
       leadSummary: lead?.enquiry_summary ?? null,
+      transcriptPreview,
+      urgencyScore: estimateVoiceUrgency(intent, urgencyDetails),
     };
   });
 }
@@ -195,10 +224,27 @@ export async function getCallListData(user: Pick<User, "email" | "id" | "user_me
         .in("id", leadIds)
         .returns<CallLead[]>()
     : { data: [] as CallLead[], error: null };
+  const callIds = [...new Set(liveCalls.map((call) => call.id))];
+  const transcriptsResult = callIds.length
+    ? await supabase
+        .from("call_transcripts")
+        .select("call_id,summary,transcript_text,source,updated_at")
+        .eq("clinic_id", membership.clinic_id)
+        .in("call_id", callIds)
+        .order("updated_at", { ascending: false })
+        .returns<LiveTranscriptRow[]>()
+    : { data: [] as LiveTranscriptRow[], error: null };
+  const transcriptsByCallId = new Map<string, LiveTranscriptRow>();
+  for (const item of transcriptsResult.data ?? []) {
+    const key = item.call_id ?? "";
+    if (!transcriptsByCallId.has(key)) {
+      transcriptsByCallId.set(key, item);
+    }
+  }
 
   return buildCallListData({
     canAddDemoCall: ["admin", "owner"].includes(membership.role),
-    calls: enrichCalls(liveCalls, leadsResult.data ?? []),
+    calls: enrichCalls(liveCalls, leadsResult.data ?? [], transcriptsByCallId),
     clinic: clinic ?? null,
     error: clinicError || callsResult.error || leadsResult.error ? "Could not load call records." : null,
     source: "supabase",

@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Call, Campaign, Clinic, Conversation, ConversationMessage, PatientLead, SmsEvent } from "@/types/database";
+import type { Call, CallTranscript, Campaign, Clinic, Conversation, ConversationMessage, PatientLead, RecoveryWorkflow, SmsEvent } from "@/types/database";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -130,6 +130,15 @@ function conversationKey(event: SmsEvent) {
   return event.recovery_workflow_id ?? event.call_id ?? event.lead_id ?? event.to_number_hash ?? event.from_number_hash ?? event.id;
 }
 
+function workflowConversationKey(workflow: RecoveryWorkflow) {
+  return workflow.id ?? workflow.call_id ?? workflow.lead_id ?? `${workflow.clinic_id}-${workflow.created_at}`;
+}
+
+function conversationKeyMatchesWorkflow(conversationId: string, workflow: RecoveryWorkflow) {
+  const workflowKeys = [workflow.id, workflow.call_id, workflow.lead_id].filter(Boolean) as string[];
+  return workflowKeys.some((key) => conversationId.includes(key) || key.includes(conversationId));
+}
+
 function replyStateFromEvents(events: SmsEvent[]): Conversation["follow_up_state"] {
   const latest = events[events.length - 1];
   if (!latest) return "not_started";
@@ -137,6 +146,109 @@ function replyStateFromEvents(events: SmsEvent[]): Conversation["follow_up_state
   if (latest.status === "delivered" || latest.status === "sent") return "scheduled";
   if (latest.status === "failed" || latest.status === "undelivered") return "failed";
   return "not_started";
+}
+
+function replyStateFromWorkflowState(state: RecoveryWorkflow["state"]): Conversation["follow_up_state"] {
+  if (state === "booked" || state === "recovered" || state === "closed") return "completed";
+  if (state === "failed" || state === "opted_out") return "failed";
+  if (state === "awaiting_patient_reply" || state === "queued" || state === "sms_sent" || state === "message_queued" || state === "drafted") {
+    return "awaiting_reply";
+  }
+  return "scheduled";
+}
+
+function conversationChannelFromWorkflow(channel: RecoveryWorkflow["channel"]): Conversation["channel"] {
+  if (channel === "phone" || channel === "sms" || channel === "email") {
+    return channel;
+  }
+
+  return "sms";
+}
+
+function conversationFromWorkflow(input: {
+  call: Call | null;
+  lead: PatientLead | null;
+  transcript: CallTranscript | null;
+  workflow: RecoveryWorkflow;
+}): Conversation {
+  const subject =
+    input.lead?.enquiry_summary?.split(".")[0]?.trim() ||
+    input.call?.recovery_next_action ||
+    input.transcript?.summary?.trim() ||
+    "Phone triage";
+  const latestMessageAt = input.transcript?.updated_at ?? input.workflow.updated_at ?? input.call?.updated_at ?? input.workflow.created_at;
+  const priority = input.lead?.priority === "urgent" || input.lead?.priority === "high" ? "urgent" : input.workflow.state === "failed" ? "urgent" : "normal";
+
+  return {
+    ai_summary:
+      input.transcript?.summary?.trim() ||
+      input.transcript?.transcript_text?.trim() ||
+      input.lead?.enquiry_summary?.trim() ||
+      input.call?.recovery_next_action ||
+      "Phone triage captured from an inbound call.",
+    channel: conversationChannelFromWorkflow(input.workflow.channel),
+    clinic_id: input.workflow.clinic_id,
+    created_at: input.workflow.created_at,
+    deleted_at: null,
+    follow_up_state: replyStateFromWorkflowState(input.workflow.state),
+    id: `phone-thread-${workflowConversationKey(input.workflow)}`,
+    last_message_at: latestMessageAt,
+    patient_id: input.workflow.patient_id ?? input.lead?.id ?? null,
+    priority,
+    status:
+      input.workflow.state === "closed" ||
+      input.workflow.state === "booked" ||
+      input.workflow.state === "recovered" ||
+      input.workflow.state === "opted_out" ||
+      input.workflow.state === "failed" ||
+      input.workflow.state === "lost"
+        ? "closed"
+        : "open",
+    subject,
+    updated_at: latestMessageAt,
+  };
+}
+
+function workflowMessages(input: {
+  conversationId: string;
+  call: Call | null;
+  lead: PatientLead | null;
+  transcript: CallTranscript | null;
+  workflow: RecoveryWorkflow;
+}): ConversationMessage[] {
+  const messages: ConversationMessage[] = [];
+  const timestamp = input.transcript?.updated_at ?? input.workflow.updated_at ?? input.workflow.created_at;
+
+  if (input.transcript?.transcript_text) {
+    messages.push({
+      ai_generated: false,
+      body: input.transcript.transcript_text,
+      clinic_id: input.workflow.clinic_id,
+      conversation_id: input.conversationId,
+      created_at: timestamp,
+      delivery_status: "received",
+      direction: "inbound",
+      id: `phone-message-${input.workflow.id}-transcript`,
+      sender_type: "patient",
+      sent_at: timestamp,
+    });
+  }
+
+  const followUpBody = input.call?.recovery_next_action || input.lead?.enquiry_summary || "Phone triage captured by ClinicFlow.";
+  messages.push({
+    ai_generated: true,
+    body: followUpBody,
+    clinic_id: input.workflow.clinic_id,
+    conversation_id: input.conversationId,
+    created_at: timestamp,
+    delivery_status: "draft",
+    direction: "outbound",
+    id: `phone-message-${input.workflow.id}-follow-up`,
+    sender_type: "ai",
+    sent_at: timestamp,
+  });
+
+  return messages;
 }
 
 function conversationFromGroup(input: {
@@ -202,7 +314,14 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
     });
   }
 
-  const [{ data: clinic, error: clinicError }, { data: smsEvents, error: smsError }, { data: leads }, { data: calls }] = await Promise.all([
+  const [
+    { data: clinic, error: clinicError },
+    { data: smsEvents },
+    { data: leads, error: leadsError },
+    { data: calls, error: callsError },
+    { data: workflows, error: workflowsError },
+    { data: transcripts },
+  ] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>(),
     supabase
       .from("sms_events")
@@ -213,6 +332,21 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
       .returns<SmsEvent[]>(),
     supabase.from("patient_leads").select("*").eq("clinic_id", membership.clinic_id).is("deleted_at", null).limit(50).returns<PatientLead[]>(),
     supabase.from("calls").select("*").eq("clinic_id", membership.clinic_id).is("deleted_at", null).limit(50).returns<Call[]>(),
+    supabase
+      .from("recovery_workflows")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .limit(50)
+      .returns<RecoveryWorkflow[]>(),
+    supabase
+      .from("call_transcripts")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(50)
+      .returns<CallTranscript[]>(),
   ]);
 
   const grouped = new Map<string, SmsEvent[]>();
@@ -225,18 +359,57 @@ export async function getCommunicationsData(user: Pick<User, "email" | "id" | "u
 
   const leadsById = new Map((leads ?? []).map((lead) => [lead.id, lead]));
   const callsById = new Map((calls ?? []).map((call) => [call.id, call]));
-  const conversations = Array.from(grouped.values()).map((events) => conversationFromGroup({ callsById, events, leadsById }));
-  const messages = Array.from(grouped.entries()).flatMap(([conversationKeyValue, events]) =>
+  const transcriptsByCallId = new Map<string, CallTranscript>();
+  for (const item of transcripts ?? []) {
+    const key = item.call_id ?? "";
+    if (!transcriptsByCallId.has(key)) {
+      transcriptsByCallId.set(key, item);
+    }
+  }
+  const workflowThreads = (workflows ?? []).flatMap((workflow) => {
+    const matchingKey = Array.from(grouped.keys()).find((key) => conversationKeyMatchesWorkflow(key, workflow));
+    if (matchingKey) {
+      return [] as Conversation[];
+    }
+
+    const call = workflow.call_id ? callsById.get(workflow.call_id) ?? null : null;
+    const lead = workflow.lead_id ? leadsById.get(workflow.lead_id) ?? null : null;
+    const transcript = workflow.call_id ? transcriptsByCallId.get(workflow.call_id) ?? null : null;
+    return [conversationFromWorkflow({ call, lead, transcript, workflow })];
+  });
+  const conversations = [...Array.from(grouped.values()).map((events) => conversationFromGroup({ callsById, events, leadsById })), ...workflowThreads];
+  const messages = [
+    ...Array.from(grouped.entries()).flatMap(([conversationKeyValue, events]) =>
     [...events]
       .sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime())
       .map((event) => messageFromSmsEvent({ ...event, provider_message_id: event.provider_message_id ?? `thread-${conversationKeyValue}` }, `sms-thread-${conversationKeyValue}`)),
-  );
+    ),
+    ...Array.from((workflows ?? [])).flatMap((workflow) => {
+      const matchingConversation = conversations.find((conversation) => conversation.id === `phone-thread-${workflowConversationKey(workflow)}`);
+      if (!matchingConversation) {
+        return [] as ConversationMessage[];
+      }
+
+      const matchingKey = Array.from(grouped.keys()).find((key) => conversationKeyMatchesWorkflow(key, workflow));
+      if (matchingKey) {
+        return [] as ConversationMessage[];
+      }
+
+      return workflowMessages({
+        call: workflow.call_id ? callsById.get(workflow.call_id) ?? null : null,
+        conversationId: matchingConversation.id,
+        lead: workflow.lead_id ? leadsById.get(workflow.lead_id) ?? null : null,
+        transcript: workflow.call_id ? transcriptsByCallId.get(workflow.call_id) ?? null : null,
+        workflow,
+      });
+    }),
+  ];
 
   return buildData({
     campaigns: [],
     clinic: clinic ?? null,
     conversations,
-    error: clinicError || smsError ? "Could not load communication records." : null,
+    error: clinicError || leadsError || callsError || workflowsError ? "Could not load communication records." : null,
     messages,
     source: "supabase",
   });

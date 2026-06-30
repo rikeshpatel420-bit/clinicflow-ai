@@ -129,11 +129,14 @@ export default async function CallsPage({
             </div>
             {data.calls.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[820px] text-left text-sm">
+                <table className="w-full min-w-[1120px] text-left text-sm">
                   <thead className="bg-[#f7faf9] text-[#65736f]">
                     <tr>
                       <th className="px-5 py-3 font-semibold">Call</th>
                       <th className="px-5 py-3 font-semibold">Caller</th>
+                      <th className="px-5 py-3 font-semibold">Intent</th>
+                      <th className="px-5 py-3 font-semibold">Urgency</th>
+                      <th className="px-5 py-3 font-semibold">Transcript</th>
                       <th className="px-5 py-3 font-semibold">Status</th>
                       <th className="px-5 py-3 font-semibold">Recovery</th>
                       <th className="px-5 py-3 font-semibold">Duration</th>
@@ -154,6 +157,19 @@ export default async function CallsPage({
                           <span className="mt-1 block text-xs">
                             {call.caller_number_last4 ? `Ending ${call.caller_number_last4}` : "Number protected"}
                           </span>
+                        </td>
+                        <td className="px-5 py-4 text-[#394642]">
+                          <span className="inline-flex rounded-full border border-[#c8eee6] bg-[#f7fffd] px-3 py-1 text-xs font-semibold text-[#087968]">
+                            {call.intentLabel ?? "Unclear"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-[#394642]">
+                          <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${call.urgencyScore && call.urgencyScore >= 90 ? "border-[#f2dfd8] bg-[#fff9f6] text-[#9a3412]" : "border-[#dbe6e2] bg-white text-[#52615d]"}`}>
+                            {call.urgencyScore ? `${call.urgencyScore}/100` : "—"}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-[#65736f]">
+                          <p className="max-w-[22rem] text-xs leading-6 text-[#52615d]">{call.transcriptPreview ?? "No transcript captured yet."}</p>
                         </td>
                         <td className="px-5 py-4">
                           <CallStatusBadge status={call.status} />

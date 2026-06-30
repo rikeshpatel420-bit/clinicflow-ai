@@ -57,6 +57,17 @@ export function CallDetailLivePanel({ callId, initialData }: { callId: string; i
               {call.direction === "inbound" ? "Inbound call" : "Outbound call"}
             </h1>
             <p className="mt-3 text-[0.98rem] leading-7 text-[#52615d]">{data.recommendedAction}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-[#c8eee6] bg-[#f7fffd] px-3 py-1.5 text-xs font-semibold text-[#087968]">
+                {call.intentLabel ?? "Intent unclear"}
+              </span>
+              <span className="rounded-full border border-[#dbe6e2] bg-white px-3 py-1.5 text-xs font-semibold text-[#52615d]">
+                Urgency {call.urgencyScore ?? 0}/100
+              </span>
+              <span className="rounded-full border border-[#dbe6e2] bg-white px-3 py-1.5 text-xs font-semibold text-[#52615d]">
+                {call.transcriptPreview ? "Speech captured" : "No speech capture yet"}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <CallStatusBadge status={call.status} />
@@ -130,7 +141,9 @@ export function CallDetailLivePanel({ callId, initialData }: { callId: string; i
               </div>
               <div className="rounded-[24px] border border-[#edf2f0] bg-[#fbfdfc] p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#65736f]">AI transcript</p>
-                <p className="mt-2 text-sm leading-7 text-[#10201d]">{data.transcript?.transcript_text ?? "No transcript available yet."}</p>
+                <p className="mt-2 text-sm leading-7 text-[#10201d]">
+                  {data.transcript?.transcript_text ?? call.transcriptPreview ?? "No transcript available yet."}
+                </p>
               </div>
               <div className="rounded-[24px] border border-[#edf2f0] bg-[#fbfdfc] p-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#65736f]">Recommended action</p>
@@ -220,3 +233,4 @@ export function CallDetailLivePanel({ callId, initialData }: { callId: string; i
     </>
   );
 }
+

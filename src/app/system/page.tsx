@@ -47,6 +47,7 @@ export default async function SystemPage() {
     { label: "NEXT_PUBLIC_SUPABASE_ANON_KEY", configured: report.env.supabaseAnonKey, note: "Required for authenticated server/client requests." },
     { label: "SUPABASE_SERVICE_ROLE_KEY", configured: report.env.supabaseServiceRoleKey, note: "Required to inspect and write clinic-scoped operational data." },
     { label: "TWILIO_CONFIG_ENCRYPTION_SECRET", configured: report.env.twilioConfigEncryptionSecret, note: "Required to encrypt and decrypt the clinic auth token." },
+    { label: "TWILIO_AUTH_TOKEN", configured: report.env.twilioAuthToken, note: "Optional fallback only; the clinic-row token is preferred for production webhooks." },
     { label: "TWILIO_WEBHOOK_TEST_MODE", configured: !report.env.twilioTestMode, note: "Must be false for live Twilio signature checks." },
     { label: "OPENAI_API_KEY", configured: report.env.openAiKey, note: "Required for call summaries and recommendations." },
     { label: "SMS sender", configured: report.env.twilioMessagingServiceSid || report.env.twilioPhoneNumber, note: "Use either a Messaging Service SID or the Twilio number itself." },
@@ -270,12 +271,12 @@ export default async function SystemPage() {
           </div>
 
           <p className="mt-4 text-xs leading-6 text-[#7b8a85]">
-            ClinicFlow stores the Twilio auth token encrypted per clinic. The app tracks the phone number itself in `twilio_connections`; a Twilio phone
-            number SID is not part of the current schema, so it is treated as a console-side value rather than a stored app dependency.
+            ClinicFlow stores the Twilio auth token encrypted per clinic and prefers the clinic-row token for webhook validation. The app tracks the
+            phone number itself in `twilio_connections`; a Twilio phone number SID is not part of the current schema, so it is treated as a
+            console-side value rather than a stored app dependency.
           </p>
         </footer>
       </section>
     </main>
   );
 }
-

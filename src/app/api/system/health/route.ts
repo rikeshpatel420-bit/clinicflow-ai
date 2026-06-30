@@ -19,6 +19,7 @@ export function GET(request: NextRequest) {
     app: "ClinicFlow AI",
     diagnostics: {
       openAiConfigured: Boolean(env.openaiApiKey),
+      twilioAuthTokenConfigured: Boolean(env.twilioAuthToken),
       supabaseServiceRoleConfigured: Boolean(env.supabaseServiceRoleKey),
       twilioConfigEncryptionSecretConfigured: Boolean(env.twilioConfigEncryptionSecret),
       twilioMessagingServiceConfigured: Boolean(env.twilioMessagingServiceSid?.trim()),

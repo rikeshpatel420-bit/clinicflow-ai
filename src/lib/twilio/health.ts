@@ -8,6 +8,7 @@ export type TwilioSetupHealth = {
   connectionError: string | null;
   env: {
     configEncryptionSecret: boolean;
+    twilioAuthTokenConfigured: boolean;
     smsSenderConfigured: boolean;
     siteUrlConfigured: boolean;
     testMode: boolean;
@@ -98,6 +99,7 @@ export function getTwilioEnvHealth() {
 
   return {
     configEncryptionSecret: normalizedConfiguredValue(env.twilioConfigEncryptionSecret),
+    twilioAuthTokenConfigured: normalizedConfiguredValue(env.twilioAuthToken),
     smsSenderConfigured: hasConfiguredTwilioSender(env),
     smsSenderMessagingServiceConfigured: normalizedConfiguredValue(env.twilioMessagingServiceSid),
     smsSenderPhoneNumberConfigured: normalizedConfiguredValue(env.twilioPhoneNumber),

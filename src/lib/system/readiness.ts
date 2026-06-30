@@ -41,6 +41,7 @@ export type ProductionReadinessReport = {
     supabaseServiceRoleKey: boolean;
     supabaseUrl: boolean;
     twilioConfigEncryptionSecret: boolean;
+    twilioAuthToken: boolean;
     twilioMessagingServiceSid: boolean;
     twilioPhoneNumber: boolean;
     twilioSenderConfigured: boolean;
@@ -108,6 +109,7 @@ function buildEnvChecks() {
     supabaseServiceRoleKey: Boolean(env.supabaseServiceRoleKey),
     supabaseUrl: Boolean(supabase.supabaseUrl),
     twilioConfigEncryptionSecret: Boolean(env.twilioConfigEncryptionSecret),
+    twilioAuthToken: Boolean(env.twilioAuthToken),
     twilioMessagingServiceSid: Boolean(env.twilioMessagingServiceSid?.trim()),
     twilioPhoneNumber: Boolean(env.twilioPhoneNumber?.trim()),
     twilioSenderConfigured: hasConfiguredTwilioSender(env),

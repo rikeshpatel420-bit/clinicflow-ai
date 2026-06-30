@@ -27,7 +27,7 @@ import {
 export const dynamic = "force-dynamic";
 
 function statusMessage(value?: string) {
-  if (value === "saved") return { tone: "success" as const, text: "Twilio settings saved securely for this clinic." };
+  if (value === "saved") return { tone: "success" as const, text: "Auth token refreshed and saved securely for this clinic." };
   if (value === "deleted") return { tone: "success" as const, text: "Twilio settings removed for this clinic." };
   if (value === "tested") return { tone: "success" as const, text: "Twilio connection verified successfully." };
   if (value === "sms-tested") return { tone: "success" as const, text: "Test SMS sent and logged for this clinic." };
@@ -485,6 +485,22 @@ export default async function TwilioIntegrationPage({
                 <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
                   <p className="font-semibold text-[#10201d]">Voice number</p>
                   <p className="mt-1 text-[#65736f]">{connection.voice_number}</p>
+                </div>
+                <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                  <p className="font-semibold text-[#10201d]">Auth token</p>
+                  <p className="mt-1 text-[#65736f]">
+                    {connection.authTokenDecrypted
+                      ? `Decrypted successfully via ${connection.authTokenSource}${connection.authTokenLast6 ? ` · ending ${connection.authTokenLast6}` : ""}`
+                      : connection.authTokenSource === "environment"
+                        ? `Using environment fallback${connection.authTokenLast6 ? ` · ending ${connection.authTokenLast6}` : ""}`
+                        : "Stored securely"}
+                  </p>
+                  {connection.authTokenSource === "environment" ? (
+                    <p className="mt-2 text-xs leading-5 text-amber-700">
+                      Environment fallback is active. Save the current Twilio Account Auth Token into the clinic row to keep validation
+                      clinic-scoped.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
                   <p className="font-semibold text-[#10201d]">Forward to</p>

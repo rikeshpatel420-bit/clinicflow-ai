@@ -34,6 +34,9 @@ export type TwilioConnectionView = Pick<
   | "updated_at"
 > & {
   accountSidMasked: string;
+  authTokenDecrypted: boolean;
+  authTokenLast6: string | null;
+  authTokenSource: "clinic-row" | "environment" | "missing";
   hasAuthToken: boolean;
 };
 
@@ -44,6 +47,7 @@ export function toTwilioConnectionView(connection: TwilioConnection | null): Twi
 
   const active = isTwilioConnectionActive(connection);
   const hasAuthToken = Boolean(connection.encrypted_auth_token ?? connection.auth_token_ciphertext);
+  const resolvedAuthToken = resolveTwilioSignatureAuthToken(connection);
 
   return {
     accountSidMasked: maskAccountSid(connection.account_sid),
@@ -53,6 +57,9 @@ export function toTwilioConnectionView(connection: TwilioConnection | null): Twi
     created_at: connection.created_at,
     created_by: connection.created_by,
     forward_to_number: connection.forward_to_number,
+    authTokenDecrypted: resolvedAuthToken.authTokenSource === "clinic-row",
+    authTokenLast6: resolvedAuthToken.authToken ? resolvedAuthToken.authToken.slice(-6) : null,
+    authTokenSource: resolvedAuthToken.authTokenSource,
     hasAuthToken,
     id: connection.id,
     last_error: connection.last_error,

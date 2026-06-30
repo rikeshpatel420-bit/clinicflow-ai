@@ -58,8 +58,8 @@ export function PatientDetailLivePanel({ patientId, initialData }: { patientId: 
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[["Calls", data.callCount.toString()], ["SMS", data.smsCount.toString()], ["Voicemails", data.voicemailCount.toString()], ["Workflows", data.workflowCount.toString()]].map(([label, value]) => (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {[["Calls", data.callCount.toString()], ["SMS", data.smsCount.toString()], ["Voicemails", data.voicemailCount.toString()], ["Recordings", data.recordingCount.toString()], ["Workflows", data.workflowCount.toString()]].map(([label, value]) => (
               <div key={label} className="rounded-[22px] border border-[#edf2f0] bg-white p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#65736f]">{label}</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight text-[#10201d]">{value}</p>
@@ -173,6 +173,32 @@ export function PatientDetailLivePanel({ patientId, initialData }: { patientId: 
                   {item}
                 </div>
               ))}
+            </div>
+          </article>
+
+          <article className="rounded-[32px] border border-[#dbe6e2] bg-white p-6 shadow-[0_24px_100px_rgba(16,33,29,0.08)]">
+            <p className="text-sm font-semibold text-[#087968]">Recordings</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[#10201d]">Playback for call review</h2>
+            <div className="mt-5 grid gap-3">
+              {data.recordings.length > 0 ? (
+                data.recordings.map((recording) => (
+                  <div key={recording.id} className="rounded-[22px] border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-sm font-semibold text-[#10201d]">Recording</p>
+                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#65736f]">
+                        {recording.recording_duration_seconds ? `${recording.recording_duration_seconds}s` : "Duration pending"}
+                      </span>
+                    </div>
+                    <audio className="mt-3 w-full" controls src={recording.recording_url}>
+                      Your browser does not support the audio element.
+                    </audio>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[22px] border border-dashed border-[#dbe6e2] bg-[#fbfdfc] p-4 text-sm leading-7 text-[#65736f]">
+                  No recording is attached to this patient yet.
+                </div>
+              )}
             </div>
           </article>
 

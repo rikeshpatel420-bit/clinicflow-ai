@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
+import type { Call, CallRecording, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
 import { demoClinic, demoPatients } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
@@ -49,6 +49,8 @@ export type PatientDetailData = PatientListData & {
   callCount: number;
   lead: PatientRecord | null;
   recommendedAction: string;
+  recordings: CallRecording[];
+  recordingCount: number;
   smsCount: number;
   summary: {
     appointmentRecommendation: string;
@@ -157,6 +159,8 @@ function buildPatientDetailData(input: {
   lead: PatientRecord | null;
   listData: PatientListData;
   recommendedAction: string;
+  recordings: CallRecording[];
+  recordingCount: number;
   smsCount: number;
   summary: PatientDetailData["summary"];
   timeline: PatientTimelineItem[];
@@ -171,6 +175,8 @@ function buildPatientDetailData(input: {
     callCount: input.callCount,
     lead: input.lead,
     recommendedAction: input.recommendedAction,
+    recordings: input.recordings,
+    recordingCount: input.recordingCount,
     smsCount: input.smsCount,
     summary: input.summary,
     timeline: input.timeline,
@@ -264,6 +270,8 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
       lead,
       listData,
       recommendedAction,
+      recordings: [],
+      recordingCount: 0,
       smsCount: 0,
       summary: fallbackPatientSummary(lead, recommendedAction),
       timeline: [],
@@ -284,6 +292,8 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
       lead,
       listData,
       recommendedAction: "Create or recover the patient lead first.",
+      recordings: [],
+      recordingCount: 0,
       smsCount: 0,
       summary: fallbackPatientSummary(lead, "Create or recover the patient lead first."),
       timeline: [],
@@ -326,6 +336,16 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
   const relatedSms = smsEvents ?? [];
   const relatedWorkflows = workflows ?? [];
   const relatedCallIds = relatedCalls.map((call) => call.id);
+  const { data: recordings } = relatedCallIds.length
+    ? await supabase
+        .from("call_recordings")
+        .select("*")
+        .eq("clinic_id", membership.clinic_id)
+        .is("deleted_at", null)
+        .in("call_id", relatedCallIds)
+        .order("updated_at", { ascending: false })
+        .returns<CallRecording[]>()
+    : { data: [] as CallRecording[] };
 
   const { data: aiSummaryLog } = await supabase
     .from("ai_audit_logs")
@@ -364,6 +384,7 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
 
   const relatedVoicemails = voicemails ?? [];
   const relatedTranscripts = transcripts ?? [];
+  const relatedRecordings = recordings ?? [];
   const aiSummaryEvent: PatientTimelineItem[] = aiSummary
     ? [
         {
@@ -414,6 +435,14 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
       timestamp: transcript.updated_at,
       tone: transcript.status === "ready" ? "positive" : "neutral",
       title: "AI summary",
+    })) ?? []),
+    ...(relatedRecordings.map((recording): PatientTimelineItem => ({
+      detail: recording.recording_url,
+      id: `recording-${recording.id}`,
+      kind: "note",
+      timestamp: recording.updated_at,
+      tone: recording.status === "failed" ? "warning" : "positive",
+      title: "Recording",
     })) ?? []),
     ...(relatedWorkflows.map((workflow): PatientTimelineItem => ({
       detail: `Recovery workflow moved to ${workflow.state.replace(/_/g, " ")}.`,
@@ -496,6 +525,8 @@ export async function getPatientDetailData(user: Pick<User, "email" | "id" | "us
     lead,
     listData,
     recommendedAction,
+    recordings: relatedRecordings,
+    recordingCount: relatedRecordings.length,
     smsCount: relatedSms.length,
     summary,
     timeline,

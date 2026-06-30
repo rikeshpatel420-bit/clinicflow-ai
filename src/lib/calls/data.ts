@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Call, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
+import type { Call, CallRecording, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
 import { demoClinic } from "@/lib/dashboard/data";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
@@ -52,6 +52,7 @@ export type CallDetailData = CallListData & {
   aiSummaryGeneratedAt: string | null;
   lead: CallLead | null;
   recommendedAction: string;
+  recordings: CallRecording[];
   smsEvents: SmsEvent[];
   transcript: CallTranscript | null;
   voicemail: VoicemailMessage | null;
@@ -216,6 +217,7 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
       aiSummaryGeneratedAt: null,
       lead: null,
       recommendedAction: call ? "Review the call log and recovery notes." : "No call found.",
+      recordings: [],
       smsEvents: [],
       transcript: null,
       voicemail: null,
@@ -234,6 +236,7 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
       aiSummaryGeneratedAt: null,
       lead: null,
       recommendedAction: "Review the call log and recovery notes.",
+      recordings: [],
       smsEvents: [],
       transcript: null,
       voicemail: null,
@@ -241,7 +244,7 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
     } satisfies CallDetailData;
   }
 
-  const [{ data: lead }, { data: smsEvents }, { data: workflow }, { data: voicemail }, { data: transcript }] = await Promise.all([
+  const [{ data: lead }, { data: smsEvents }, { data: workflow }, { data: voicemail }, { data: transcript }, { data: recordings }] = await Promise.all([
     call.lead_id
       ? supabase.from("patient_leads").select("id,enquiry_summary,estimated_value_pence,status,source,priority").eq("clinic_id", membership.clinic_id).eq("id", call.lead_id).maybeSingle<CallLead>()
       : Promise.resolve({ data: null as CallLead | null }),
@@ -270,6 +273,14 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
       .eq("clinic_id", membership.clinic_id)
       .eq("call_id", call.id)
       .maybeSingle<CallTranscript>(),
+    supabase
+      .from("call_recordings")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .eq("call_id", call.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .returns<CallRecording[]>(),
   ]);
 
   const { data: aiSummaryLog } = await supabase
@@ -298,6 +309,7 @@ export async function getCallDetailData(user: Pick<User, "email" | "id" | "user_
           : call.status === "answered"
             ? "Confirm the outcome and capture the next booking step."
             : "Review the call and decide the next recovery step.",
+    recordings: recordings ?? [],
     smsEvents: smsEvents ?? [],
     transcript: transcript ?? null,
     voicemail: voicemail ?? null,

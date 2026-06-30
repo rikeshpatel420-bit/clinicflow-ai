@@ -136,6 +136,28 @@ export function CallDetailLivePanel({ callId, initialData }: { callId: string; i
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#65736f]">Recommended action</p>
                 <p className="mt-2 text-sm leading-7 text-[#10201d]">{data.recommendedAction}</p>
               </div>
+              <div className="rounded-[24px] border border-[#edf2f0] bg-[#fbfdfc] p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#65736f]">Recordings</p>
+                {data.recordings.length > 0 ? (
+                  <div className="mt-3 grid gap-3">
+                    {data.recordings.map((recording) => (
+                      <div key={recording.id} className="rounded-[18px] border border-[#dbe6e2] bg-white p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <p className="text-sm font-semibold text-[#10201d]">{recording.status.replace(/_/g, " ")}</p>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#65736f]">
+                            {recording.recording_duration_seconds ? `${recording.recording_duration_seconds}s` : "Duration pending"}
+                          </p>
+                        </div>
+                        <audio className="mt-3 w-full" controls src={recording.recording_url}>
+                          Your browser does not support the audio element.
+                        </audio>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-7 text-[#52615d]">No recording is attached to this call yet.</p>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${sectionTone(call.status === "answered" || call.status === "recovered" ? "positive" : call.status === "missed" || call.status === "voicemail" ? "warning" : "neutral")}`}>
                   {call.status}

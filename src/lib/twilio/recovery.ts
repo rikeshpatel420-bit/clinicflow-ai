@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, CallTranscript, Clinic, Inserts, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { Call, CallTranscript, Clinic, Inserts, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { generateCallReceptionSummary } from "@/lib/ai/call-summary";
 import { hashPhoneNumber, normalizePhoneNumber } from "./crypto";
 import { getTwilioConnectionForVoiceNumber, toTwilioConnectionView } from "./config";
@@ -51,6 +51,93 @@ async function getClinicName(clinicId: string) {
   }
 
   return data.name;
+}
+
+function buildPatientDisplayName(callerNumber: string | null, leadSummary: string | null) {
+  const summary = leadSummary?.replace(/^\[ClinicFlow demo\]\s*/i, "").trim();
+  const candidate = summary?.split(":")[0]?.trim();
+
+  if (candidate && !/(call|enquiry|callback|missed|phone|emergency)/i.test(candidate) && candidate.length <= 80) {
+    return candidate;
+  }
+
+  if (callerNumber) {
+    return `Caller ending ${callerNumber.slice(-4)}`;
+  }
+
+  return "Incoming caller";
+}
+
+function mapPatientStatusFromCallStatus(status: Call["status"] | PatientLead["status"]): Patient["status"] {
+  if (status === "booked" || status === "won" || status === "recovered") return "active";
+  if (status === "lost" || status === "opted_out") return "inactive";
+  if (status === "archived") return "archived";
+  return "lead";
+}
+
+async function ensurePatientProfileForCall(input: {
+  callerNumber: string | null;
+  clinicId: string;
+  createdBy: string | null;
+  lead: PatientLead | null;
+}) {
+  const normalizedPhone = normalizePhoneNumber(input.callerNumber);
+  if (!normalizedPhone) {
+    return { error: null, patient: null as Patient | null };
+  }
+
+  const admin = createSupabaseAdminClient();
+  const now = new Date().toISOString();
+  const fullName = buildPatientDisplayName(normalizedPhone, input.lead?.enquiry_summary ?? null);
+  const notes = input.lead?.enquiry_summary ?? `Captured from a Twilio call from ${normalizedPhone}.`;
+  const status = mapPatientStatusFromCallStatus(input.lead?.status ?? "new");
+
+  const { data: existing, error: existingError } = await admin
+    .from("patients")
+    .select("*")
+    .eq("clinic_id", input.clinicId)
+    .eq("phone", normalizedPhone)
+    .maybeSingle<Patient>();
+
+  if (existingError) {
+    return { error: existingError.message, patient: null as Patient | null };
+  }
+
+  if (existing) {
+    const { data, error } = await admin
+      .from("patients")
+      .update({
+        full_name: fullName || existing.full_name,
+        notes,
+        phone: normalizedPhone,
+        status,
+        updated_by: input.createdBy,
+        updated_at: now,
+      })
+      .eq("id", existing.id)
+      .eq("clinic_id", input.clinicId)
+      .select("*")
+      .single<Patient>();
+
+    return { error: error?.message ?? null, patient: data ?? existing };
+  }
+
+  const { data, error } = await admin
+    .from("patients")
+    .insert({
+      clinic_id: input.clinicId,
+      created_by: input.createdBy,
+      full_name: fullName,
+      notes,
+      phone: normalizedPhone,
+      source: "phone",
+      status,
+      updated_by: input.createdBy,
+    })
+    .select("*")
+    .single<Patient>();
+
+  return { error: error?.message ?? null, patient: data ?? null };
 }
 
 async function upsertCallRecord(input: {
@@ -585,6 +672,20 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload) {
   const call = callResult.call;
   if (!call) {
     return { ...baseSummary, error: "Could not persist the Twilio call record.", ok: false };
+  }
+
+  const patientResult = await ensurePatientProfileForCall({
+    callerNumber: classification.callerNumber,
+    clinicId: connection.clinic_id,
+    createdBy: connection.created_by,
+    lead: null,
+  });
+
+  if (patientResult.error) {
+    logTwilioError("patient_profile_failed", patientResult.error, {
+      callSid: call.provider_call_id ?? classification.callSid ?? call.id,
+      clinicId: connection.clinic_id,
+    });
   }
 
   if (classification.isMissed || classification.isVoicemail || classification.isAbandoned) {

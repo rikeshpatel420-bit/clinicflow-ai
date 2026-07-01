@@ -1,8 +1,9 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, CallTranscript, Clinic, Inserts, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { Call, CallTranscript, Clinic, Inserts, Json, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { generateCallReceptionSummary } from "@/lib/ai/call-summary";
 import { getBackendEnv } from "@/lib/backend/env";
 import { hashPhoneNumber, normalizePhoneNumber } from "./crypto";
+import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForVoiceNumber, toTwilioConnectionView } from "./config";
 import { classifyTwilioCall, type TwilioWebhookPayload } from "./missed-call";
 import { createRecoverySmsDraft, sendRecoverySms } from "./sms";
@@ -714,71 +715,140 @@ export async function refreshCallReceptionSummary(input: {
   const summary = summaryResult.summary;
   const now = new Date().toISOString();
 
+  async function recordAuditEventSafely(inputEvent: {
+    entityId: string | null;
+    entityTable: string;
+    eventType: string;
+    metadata: Record<string, unknown>;
+    riskLevel?: "low" | "medium" | "high";
+  }) {
+    try {
+      const { error } = await admin.from("audit_events").insert({
+        actor_user_id: input.connection.created_by,
+        clinic_id: input.connection.clinic_id,
+        entity_id: inputEvent.entityId,
+        entity_table: inputEvent.entityTable,
+        event_type: inputEvent.eventType,
+        metadata: inputEvent.metadata as Json,
+        risk_level: inputEvent.riskLevel ?? "medium",
+      });
+
+      if (error) {
+        logTwilioDbWriteFailure("audit_event_write_failed", error, {
+          callSid: input.call.provider_call_id ?? input.call.id,
+          clinicId: input.connection.clinic_id,
+          entityId: inputEvent.entityId,
+          entityTable: inputEvent.entityTable,
+          eventType: inputEvent.eventType,
+          operation: "insert",
+          table: "audit_events",
+        });
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logTwilioDbWriteFailure("audit_event_write_failed", error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+        entityId: inputEvent.entityId,
+        entityTable: inputEvent.entityTable,
+        eventType: inputEvent.eventType,
+        operation: "insert",
+        table: "audit_events",
+      });
+      return false;
+    }
+  }
+
   if (env.openaiApiKey && summaryResult.modelProvider !== "openai") {
-    const { error: fallbackAuditError } = await admin.from("audit_events").insert({
-      actor_user_id: input.connection.created_by,
-      clinic_id: input.connection.clinic_id,
-      entity_id: input.call.id,
-      entity_table: "calls",
-      event_type: "twilio.summary_fallback_used",
+    const fallbackAuditSaved = await recordAuditEventSafely({
+      entityId: input.call.id,
+      entityTable: "calls",
+      eventType: "twilio.summary_fallback_used",
       metadata: {
         call_id: input.call.id,
         clinic_id: input.connection.clinic_id,
         lead_id: lead?.id ?? input.call.lead_id ?? null,
         model_provider: summaryResult.modelProvider,
       },
-      risk_level: "medium",
+      riskLevel: "medium",
     });
 
-    if (fallbackAuditError) {
-      logTwilioError("summary_fallback_audit_failed", fallbackAuditError, {
+    if (!fallbackAuditSaved) {
+      logTwilioDbWriteFailure("summary_fallback_audit_failed", new Error("Fallback audit entry could not be persisted."), {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        table: "audit_events",
       });
     }
   }
 
-  const { error: auditError } = await admin.from("ai_audit_logs").insert({
-    action: "summary_created",
-    actor_user_id: input.connection.created_by,
-    call_id: input.call.id,
-    clinic_id: input.connection.clinic_id,
-    human_approved: false,
-    input_hash: summaryResult.inputHash,
-    lead_id: lead?.id ?? input.call.lead_id ?? null,
-    metadata: {
-      ...summary,
-      source_text: [input.clinicName, input.call.status, lead?.enquiry_summary ?? null, transcript?.transcript_text ?? null, voicemail?.transcript_text ?? null]
-        .filter(Boolean)
-        .join(" "),
-      updated_at: now,
-    },
-    model_name: summaryResult.modelName,
-    model_provider: summaryResult.modelProvider,
-    output_hash: summaryResult.outputHash,
-    prompt_version: "twilio-call-reception-summary-v1",
-    safety_status: "not_required",
-  });
-
-  if (auditError) {
-    await admin.from("audit_events").insert({
+  try {
+    const { error: auditError } = await admin.from("ai_audit_logs").insert({
+      action: "summary_created",
       actor_user_id: input.connection.created_by,
+      call_id: input.call.id,
       clinic_id: input.connection.clinic_id,
-      entity_id: input.call.id,
-      entity_table: "ai_audit_logs",
-      event_type: "twilio.summary_audit_failed",
+      human_approved: false,
+      input_hash: summaryResult.inputHash,
+      lead_id: lead?.id ?? input.call.lead_id ?? null,
+      metadata: {
+        ...summary,
+        source_text: [input.clinicName, input.call.status, lead?.enquiry_summary ?? null, transcript?.transcript_text ?? null, voicemail?.transcript_text ?? null]
+          .filter(Boolean)
+          .join(" "),
+        updated_at: now,
+      },
+      model_name: summaryResult.modelName,
+      model_provider: summaryResult.modelProvider,
+      output_hash: summaryResult.outputHash,
+      prompt_version: "twilio-call-reception-summary-v1",
+      safety_status: "not_required",
+    });
+
+    if (auditError) {
+      logTwilioDbWriteFailure("summary_audit_log_failed", auditError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+        operation: "insert",
+        table: "ai_audit_logs",
+      });
+      await recordAuditEventSafely({
+        entityId: input.call.id,
+        entityTable: "ai_audit_logs",
+        eventType: "twilio.summary_audit_failed",
+        metadata: {
+          call_id: input.call.id,
+          clinic_id: input.connection.clinic_id,
+          error: auditError.message,
+          lead_id: lead?.id ?? input.call.lead_id ?? null,
+        },
+        riskLevel: "medium",
+      });
+    }
+  } catch (error) {
+    logTwilioDbWriteFailure("summary_audit_log_failed", error, {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+      operation: "insert",
+      table: "ai_audit_logs",
+    });
+    await recordAuditEventSafely({
+      entityId: input.call.id,
+      entityTable: "ai_audit_logs",
+      eventType: "twilio.summary_audit_failed",
       metadata: {
         call_id: input.call.id,
         clinic_id: input.connection.clinic_id,
-        error: auditError.message,
+        error: error instanceof Error ? error.message : String(error),
         lead_id: lead?.id ?? input.call.lead_id ?? null,
       },
-      risk_level: "medium",
+      riskLevel: "medium",
     });
-    return { error: auditError.message, summary };
   }
 
-  await admin
+  const { error: callUpdateError } = await admin
     .from("calls")
     .update({
       recovery_next_action: summary.followUpRecommendation,
@@ -786,6 +856,15 @@ export async function refreshCallReceptionSummary(input: {
     })
     .eq("id", input.call.id)
     .eq("clinic_id", input.connection.clinic_id);
+
+  if (callUpdateError) {
+    logTwilioDbWriteFailure("summary_call_update_failed", callUpdateError, {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+      operation: "update",
+      table: "calls",
+    });
+  }
 
   return { error: null, summary };
 }

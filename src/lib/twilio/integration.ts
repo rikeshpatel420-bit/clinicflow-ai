@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { normalizePhoneNumber } from "./crypto";
+import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
 import { parseTwilioFormData, type TwilioWebhookPayload } from "./missed-call";
 import { processTwilioCallWebhook, processTwilioSmsWebhook, refreshCallReceptionSummary } from "./recovery";
@@ -183,32 +184,46 @@ async function recordWebhookEvent(input: {
   providerEventId: string | null;
   receivedAt: string;
 }) {
-  const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("webhook_events")
-    .upsert(
-      {
-        clinic_id: input.clinicId,
-        error_message: input.errorMessage ?? null,
-        event_type: input.eventType,
-        idempotency_key: input.idempotencyKey,
-        payload: input.payload,
-        processed_at: input.processedAt ?? null,
-        processing_status: input.processingStatus,
-        provider: "twilio",
-        provider_event_id: input.providerEventId,
-        received_at: input.receivedAt,
-      },
-      { onConflict: "provider,idempotency_key" },
-    );
+  try {
+    const admin = createSupabaseAdminClient();
+    const { error } = await admin
+      .from("webhook_events")
+      .upsert(
+        {
+          clinic_id: input.clinicId,
+          error_message: input.errorMessage ?? null,
+          event_type: input.eventType,
+          idempotency_key: input.idempotencyKey,
+          payload: input.payload,
+          processed_at: input.processedAt ?? null,
+          processing_status: input.processingStatus,
+          provider: "twilio",
+          provider_event_id: input.providerEventId,
+          received_at: input.receivedAt,
+        },
+        { onConflict: "provider,idempotency_key" },
+      );
 
-  if (error) {
-    logTwilioError("webhook_event_record_failed", error, {
+    if (error) {
+      logTwilioDbWriteFailure("webhook_event_record_failed", error, {
+        clinicId: input.clinicId,
+        eventType: input.eventType,
+        idempotencyKey: input.idempotencyKey,
+        operation: "upsert",
+        processingStatus: input.processingStatus,
+        providerEventId: input.providerEventId,
+        table: "webhook_events",
+      });
+    }
+  } catch (error) {
+    logTwilioDbWriteFailure("webhook_event_record_failed", error, {
       clinicId: input.clinicId,
       eventType: input.eventType,
       idempotencyKey: input.idempotencyKey,
+      operation: "upsert",
       processingStatus: input.processingStatus,
       providerEventId: input.providerEventId,
+      table: "webhook_events",
     });
   }
 }
@@ -361,6 +376,20 @@ async function storeSpeechTranscript(input: {
     .select("*")
     .single<CallTranscript>();
 
+  if (error) {
+    logTwilioDbWriteFailure("call_transcript_write_failed", error, {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+      operation: "upsert",
+      source: input.source,
+      table: "call_transcripts",
+    });
+
+    if (isMissingRelationError(error)) {
+      return { error: null, transcript: null as CallTranscript | null };
+    }
+  }
+
   return { error: error?.message ?? null, transcript: data ?? null };
 }
 
@@ -400,7 +429,16 @@ async function storeVoicemailArtifacts(input: {
       .single<CallRecording>();
 
     if (error) {
-      return { error: error.message, recording: null, transcript: null, voicemail: null };
+      logTwilioDbWriteFailure("voicemail_recording_write_failed", error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+        operation: "upsert",
+        table: "call_recordings",
+      });
+
+      if (!isMissingRelationError(error)) {
+        return { error: error.message, recording: null, transcript: null, voicemail: null };
+      }
     }
 
     recording = data ?? null;
@@ -428,33 +466,63 @@ async function storeVoicemailArtifacts(input: {
     .single<VoicemailMessage>();
 
   if (voicemailError) {
-    return { error: voicemailError.message, recording, transcript: null, voicemail: null };
+    logTwilioDbWriteFailure("voicemail_write_failed", voicemailError, {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+      operation: "upsert",
+      table: "voicemail_messages",
+    });
+
+    if (!isMissingRelationError(voicemailError)) {
+      return { error: voicemailError.message, recording, transcript: null, voicemail: null };
+    }
   }
 
-  const transcript = transcriptText
-    ? (
-        await admin
-          .from("call_transcripts")
-          .upsert(
-            {
-              call_id: input.call.id,
-              clinic_id: input.connection.clinic_id,
-              confidence: input.payload.TranscriptionConfidence ? Number(input.payload.TranscriptionConfidence) : null,
-              language_code: null,
-              provider: "twilio",
-              provider_transcript_id: `${baseTranscriptId}-voicemail`,
-              recording_id: recording?.id ?? null,
-              source: "voicemail",
-              status: transcriptStatus === "transcribed" ? "ready" : "pending",
-              summary: transcriptText.slice(0, 160),
-              transcript_text: transcriptText,
-            },
-            { onConflict: "provider_transcript_id" },
-          )
-          .select("*")
-          .single<CallTranscript>()
-      ).data ?? null
-    : null;
+  let transcript: CallTranscript | null = null;
+  let transcriptErrorRecorded = false;
+  if (transcriptText) {
+    const { data: transcriptData, error: transcriptError } = await admin
+      .from("call_transcripts")
+      .upsert(
+        {
+          call_id: input.call.id,
+          clinic_id: input.connection.clinic_id,
+          confidence: input.payload.TranscriptionConfidence ? Number(input.payload.TranscriptionConfidence) : null,
+          language_code: null,
+          provider: "twilio",
+          provider_transcript_id: `${baseTranscriptId}-voicemail`,
+          recording_id: recording?.id ?? null,
+          source: "voicemail",
+          status: transcriptStatus === "transcribed" ? "ready" : "pending",
+          summary: transcriptText.slice(0, 160),
+          transcript_text: transcriptText,
+        },
+        { onConflict: "provider_transcript_id" },
+      )
+      .select("*")
+      .single<CallTranscript>();
+
+    if (transcriptError) {
+      transcriptErrorRecorded = true;
+      logTwilioDbWriteFailure("voicemail_transcript_write_failed", transcriptError, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+        operation: "upsert",
+        table: "call_transcripts",
+      });
+    }
+
+    transcript = transcriptData ?? null;
+  }
+
+  if (!transcript && transcriptText && !transcriptErrorRecorded) {
+    logTwilioDbWriteFailure("voicemail_transcript_write_failed", new Error("Transcript was not returned after upsert."), {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+      operation: "upsert",
+      table: "call_transcripts",
+    });
+  }
 
   return { error: null, recording, transcript, voicemail: voicemail ?? null };
 }
@@ -629,9 +697,11 @@ async function upsertVoiceTriageArtifacts(input: {
   let transcript: CallTranscript | null = transcriptData ?? null;
   if (transcriptError) {
     if (isMissingRelationError(transcriptError)) {
-      logTwilioError("voice_transcript_table_missing", transcriptError, {
+      logTwilioDbWriteFailure("voice_transcript_table_missing", transcriptError, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: "upsert",
+        table: "call_transcripts",
       });
       transcript = null;
     } else {
@@ -666,9 +736,11 @@ async function upsertVoiceTriageArtifacts(input: {
 
   if (existingLeadError) {
     if (isMissingRelationError(existingLeadError)) {
-      logTwilioError("voice_lead_table_missing", existingLeadError, {
+      logTwilioDbWriteFailure("voice_lead_table_missing", existingLeadError, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: "select",
+        table: "patient_leads",
       });
     } else {
       return { error: existingLeadError.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
@@ -687,9 +759,11 @@ async function upsertVoiceTriageArtifacts(input: {
 
   if (leadResult.error) {
     if (isMissingRelationError(leadResult.error)) {
-      logTwilioError("voice_lead_write_table_missing", leadResult.error, {
+      logTwilioDbWriteFailure("voice_lead_write_table_missing", leadResult.error, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: existingLead ? "update" : "insert",
+        table: "patient_leads",
       });
     } else {
       return { error: leadResult.error.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
@@ -739,9 +813,11 @@ async function upsertVoiceTriageArtifacts(input: {
 
   if (patientResult.error) {
     if (isMissingRelationError(patientResult.error)) {
-      logTwilioError("voice_patient_write_table_missing", patientResult.error, {
+      logTwilioDbWriteFailure("voice_patient_write_table_missing", patientResult.error, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: effectivePhone ? (existingPatient ? "update" : "insert") : "skip",
+        table: "patients",
       });
     } else {
       return { error: patientResult.error.message, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
@@ -767,9 +843,11 @@ async function upsertVoiceTriageArtifacts(input: {
 
   if (existingWorkflow.error) {
     if (isMissingRelationError(existingWorkflow.error)) {
-      logTwilioError("voice_workflow_table_missing", existingWorkflow.error, {
+      logTwilioDbWriteFailure("voice_workflow_table_missing", existingWorkflow.error, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: "select",
+        table: "recovery_workflows",
       });
     } else {
       return { error: existingWorkflow.error.message, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
@@ -803,9 +881,11 @@ async function upsertVoiceTriageArtifacts(input: {
 
   if (workflowResult.error) {
     if (isMissingRelationError(workflowResult.error)) {
-      logTwilioError("voice_workflow_write_table_missing", workflowResult.error, {
+      logTwilioDbWriteFailure("voice_workflow_write_table_missing", workflowResult.error, {
         callSid: input.call.provider_call_id ?? input.call.id,
         clinicId: input.connection.clinic_id,
+        operation: existingWorkflow.data ? "update" : "insert",
+        table: "recovery_workflows",
       });
     } else {
       return {

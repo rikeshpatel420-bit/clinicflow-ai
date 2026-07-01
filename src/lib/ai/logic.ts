@@ -1,4 +1,5 @@
 import { createConversationEngine } from "@/lib/conversation/engine";
+import { buildConversationEngineConfig, getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 
 export type EnquiryCategory =
   | "new_patient"
@@ -19,16 +20,11 @@ export type ReceptionistState =
 
 export type AiDraftTone = "warm_professional" | "urgent_callback" | "booking_focused";
 
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
+const leadConversationConfig = buildConversationEngineConfig(activeFlowPlatformProfile.conversation.leads);
 const enquiryIntentEngine = createConversationEngine<EnquiryCategory>({
-  fallbackIntent: "general_admin",
-  intentRules: [
-    { intent: "emergency", keywords: ["pain", "swelling", "emergency", "urgent", "toothache", "broken", "abscess", "infection"], priority: 5 },
-    { intent: "implant_consult", keywords: ["implant", "implant consultation", "implant enquiry", "implant options"], priority: 4 },
-    { intent: "hygiene_recall", keywords: ["hygiene", "clean", "cleaning", "scale and polish", "recall"], priority: 3 },
-    { intent: "price_question", keywords: ["price", "pricing", "cost", "quote", "fee", "fees", "how much", "charge"], priority: 2 },
-    { intent: "reschedule", keywords: ["move", "reschedule", "cancel", "rebook", "change my appointment"], priority: 1 },
-    { intent: "new_patient", keywords: ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient"], priority: 2 },
-  ],
+  ...leadConversationConfig,
+  entityRules: undefined,
 });
 
 export function classifyIntent(text: string): EnquiryCategory {

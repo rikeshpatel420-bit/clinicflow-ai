@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 import type { Call, CallTranscript, PatientLead, SmsEvent, VoicemailMessage } from "@/types/database";
 import { getBackendEnv } from "@/lib/backend/env";
 import { classifyIntent, recommendNextAction, scoreLead, type EnquiryCategory } from "@/lib/ai/logic";
@@ -125,14 +126,15 @@ function deriveSummaryFromContext(input: CallReceptionSummaryContext): CallRecep
   const sourceText = buildSourceText(input);
   const keywords = extractKeywords(sourceText);
   const responseTone = deriveResponseTone(category, urgencyScore);
+  const templates = activeFlowPlatformProfile.conversation.leads.summaryTemplates;
   const appointmentRecommendation =
     category === "emergency"
-      ? "Offer the earliest clinically appropriate urgent slot and keep the callback immediate."
+      ? templates.appointmentRecommendation
       : category === "implant_consult"
         ? "Offer a consultation slot and capture the patient's preferred timing."
         : category === "hygiene_recall"
           ? "Offer the next hygiene availability and keep the reactivation warm."
-          : "Offer the earliest suitable appointment and confirm the preferred callback window.";
+          : templates.appointmentRecommendation;
 
   return {
     appointmentRecommendation,
@@ -141,21 +143,18 @@ function deriveSummaryFromContext(input: CallReceptionSummaryContext): CallRecep
         ? "Urgent clinical triage required before routine admin follow-up."
         : keywords.length > 0
           ? `Keywords detected: ${keywords.join(", ")}. Review for clinical priority before routine follow-up.`
-          : "No urgent clinical keywords detected. Continue standard reception triage.",
+          : templates.clinicalSummary,
     followUpRecommendation:
       input.call.recovery_status === "lost"
         ? "Respect the opt-out, close the thread, and avoid further SMS follow-up."
         : input.call.recovery_status === "booked"
           ? "Confirm the booking and send any final appointment details."
-          : recommendNextAction(category, urgencyScore),
-    patientSummary: safeText(
-      input.transcript?.summary ?? input.voicemail?.summary ?? input.lead?.enquiry_summary,
-      "Patient summary pending.",
-    ),
+          : recommendNextAction(category, urgencyScore) || templates.followUpRecommendation,
+    patientSummary: safeText(input.transcript?.summary ?? input.voicemail?.summary ?? input.lead?.enquiry_summary, templates.patientSummary),
     responseTone,
     receptionNotes:
       input.call.status === "missed"
-        ? "Missed call captured. Keep the tone calm and move to recovery."
+        ? templates.receptionNotes
         : input.call.status === "voicemail"
           ? "Voicemail captured. Call back promptly and keep the handover concise."
           : "Call logged. Keep the follow-up structured and clinic-safe.",
@@ -173,7 +172,7 @@ async function requestOpenAiSummary(input: CallReceptionSummaryContext): Promise
     body: JSON.stringify({
       input: [
         {
-          content: `You are ClinicFlow AI summarising a live dental clinic call.\nReturn concise, clinic-safe JSON only.`,
+          content: `You are ${activeFlowPlatformProfile.industry.name} Flow AI summarising a live call.\nReturn concise, clinic-safe JSON only.`,
           role: "system",
           type: "message",
         },
@@ -291,3 +290,4 @@ export async function generateCallReceptionSummary(input: CallReceptionSummaryCo
     summary,
   };
 }
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();

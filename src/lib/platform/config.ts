@@ -1,4 +1,7 @@
 import type { FeatureFlag, PlatformEvent, PlatformJob, PlatformModule } from "@/lib/platform/types";
+import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
+
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
 
 export const platformConfig = {
   environment: {
@@ -8,9 +11,9 @@ export const platformConfig = {
     apiVersion: "v1-preview",
   },
   branding: {
-    tenantName: "Harbour Dental Group",
-    accent: "teal",
-    logoText: "CF",
+    tenantName: activeFlowPlatformProfile.clinic.name,
+    accent: activeFlowPlatformProfile.clinic.branding.accent,
+    logoText: activeFlowPlatformProfile.clinic.branding.logoText,
     whiteLabelDomain: "clinicflow-demo.local",
   },
   modules: [

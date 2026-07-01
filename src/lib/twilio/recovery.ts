@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 import type { Call, CallTranscript, Clinic, Inserts, Json, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { generateCallReceptionSummary } from "@/lib/ai/call-summary";
 import { getBackendEnv } from "@/lib/backend/env";
@@ -803,7 +804,7 @@ export async function refreshCallReceptionSummary(input: {
       model_name: summaryResult.modelName,
       model_provider: summaryResult.modelProvider,
       output_hash: summaryResult.outputHash,
-      prompt_version: "twilio-call-reception-summary-v1",
+      prompt_version: `${activeFlowPlatformProfile.id}-call-reception-summary-v2`,
       safety_status: "not_required",
     });
 
@@ -1138,3 +1139,4 @@ export async function processTwilioSmsWebhook(payload: TwilioWebhookPayload) {
     replyState,
   };
 }
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();

@@ -1,4 +1,5 @@
 import { getBackendEnv } from "@/lib/backend/env";
+import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 import type { TwilioConnection } from "@/types/database";
 import { decryptConnectionAuthToken } from "./config";
 import { getTwilioSmsSenderConfiguration } from "./health";
@@ -10,8 +11,9 @@ export type SmsRecoveryDraft = {
 
 export function createRecoverySmsDraft(input: { clinicName?: string | null; patientPhone?: string | null }) {
   const clinicName = input.clinicName?.trim() || "the clinic";
+  const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
   return {
-    body: `Hi, thanks for calling ${clinicName}. Sorry we missed you. Reply YES and we'll call you back.`,
+    body: activeFlowPlatformProfile.conversation.leads.templates.sms.missedCallRecovery.replace("ClinicFlow Dental", clinicName),
     to: input.patientPhone ?? null,
   } satisfies SmsRecoveryDraft;
 }

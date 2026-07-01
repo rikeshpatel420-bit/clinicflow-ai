@@ -1,4 +1,5 @@
 import { createConversationEngine } from "@/lib/conversation/engine";
+import { buildConversationEngineConfig, getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 
 export type VoiceIntent =
   | "dental_emergency"
@@ -40,54 +41,18 @@ export type VoiceCaptureDetails = {
   wantsHuman: boolean;
 };
 
-const voiceConversationEngine = createConversationEngine<VoiceIntent, "email" | "fullName" | "mobileNumber" | "preferredAppointmentTime">({
-  clarificationPrompt: "Could I have a little more detail so I can help properly?",
-  escalationIntents: ["dental_emergency", "complaint"],
-  fallbackIntent: "other_unclear",
-  fallbackPrompt: "Could you tell me a little more so I can help properly?",
-  followUpPrompts: {
-    cancellation_reschedule: "No problem. Could I have your name, the appointment date and time if you know it, the reason, and your preferred replacement time?",
-    complaint: "I'm sorry that's been frustrating. Could I have your name, number, and what happened so we can look after it properly?",
-    dental_emergency: "I'm sorry to hear that. Are you in severe pain, or have you noticed any swelling, bleeding, trauma, or trouble breathing or swallowing?",
-    existing_patient_appointment: "Of course. Could I have your full name, date of birth if you're comfortable sharing it, mobile number, reason for calling, and preferred day or time?",
-    message_for_reception: "Certainly. Could I have your name, number, and the message you'd like passed on to reception?",
-    new_patient_appointment: "Of course. Let's get your details. What's your full name, mobile number, email if you'd like to share it, the reason for your visit, and a preferred day or time?",
-    other_unclear: "Just give me a little more detail and I'll route you to the right person.",
-    pricing_enquiry: "Absolutely. Prices can vary depending on the assessment, so please share your contact details and preferred time and the team can help properly.",
-    treatment_enquiry: "Absolutely. Which treatment are you asking about, and what are the best contact details and time for the team to reach you?",
-  },
-  intentRules: [
-    { intent: "dental_emergency", keywords: ["emergency", "urgent", "pain", "toothache", "swelling", "bleeding", "trauma", "broken", "abscess", "infection"], priority: 5 },
-    { intent: "new_patient_appointment", keywords: ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient"], priority: 4 },
-    { intent: "existing_patient_appointment", keywords: ["existing patient", "already a patient", "follow-up", "follow up", "review", "check my appointment", "my appointment"], priority: 4 },
-    { intent: "cancellation_reschedule", keywords: ["cancel", "cancellation", "reschedule", "move", "change my appointment", "rebook", "re-schedule"], priority: 3 },
-    { intent: "treatment_enquiry", keywords: ["treatment", "implant", "invisalign", "orthodontic", "whitening", "extraction", "wisdom tooth", "sedation", "bonding", "hygiene"], priority: 3 },
-    { intent: "pricing_enquiry", keywords: ["price", "pricing", "cost", "quote", "fee", "fees", "how much", "charge"], priority: 2 },
-    { intent: "complaint", keywords: ["complaint", "angry", "upset", "bad service", "not happy", "frustrated"], priority: 5 },
-    { intent: "message_for_reception", keywords: ["message", "pass on", "ask reception", "reception", "note", "callback"], priority: 1 },
-  ],
-  entityRules: [
-    { entity: "email", patterns: [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i], normalize: (value) => value.toLowerCase() },
-    { entity: "fullName", patterns: [/(?:my name is|i am|this is)\s+([a-z]+(?:\s+[a-z]+){0,3})/i, /name\s+(?:is|'s)?\s*([a-z]+(?:\s+[a-z]+){0,3})/i], normalize: (value) => value.replace(/\b\w/g, (letter) => letter.toUpperCase()) },
-    { entity: "mobileNumber", patterns: [/(?:\+44\s?7\d{3}[\s-]?\d{3}[\s-]?\d{3}|07\d{3}[\s-]?\d{3}[\s-]?\d{3})/i], normalize: (value) => value.replace(/\s+/g, " ").trim() },
-    { entity: "preferredAppointmentTime", patterns: [/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening))?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?/i, /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i] },
-  ],
-});
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
+const voiceConversationEngine = createConversationEngine<VoiceIntent, "email" | "fullName" | "mobileNumber" | "preferredAppointmentTime">(
+  buildConversationEngineConfig(activeFlowPlatformProfile.conversation.voice),
+);
 
 const treatmentConversationEngine = createConversationEngine<TreatmentType>({
   fallbackIntent: "other",
-  intentRules: [
-    { intent: "implant", keywords: ["implant"], priority: 5 },
-    { intent: "invisalign_orthodontics", keywords: ["invisalign", "brace", "orthodontic", "orthodontics"], priority: 4 },
-    { intent: "hygiene", keywords: ["hygiene", "cleaning", "clean", "scale and polish"], priority: 4 },
-    { intent: "whitening", keywords: ["whitening", "white teeth"], priority: 3 },
-    { intent: "extraction", keywords: ["extraction", "remove tooth", "take out tooth"], priority: 4 },
-    { intent: "wisdom_tooth", keywords: ["wisdom tooth", "wisdom teeth"], priority: 4 },
-    { intent: "sedation", keywords: ["sedation", "sedated"], priority: 3 },
-    { intent: "cosmetic_bonding", keywords: ["bonding", "cosmetic bonding"], priority: 3 },
-    { intent: "check_up", keywords: ["check-up", "check up", "routine", "exam", "examination"], priority: 2 },
-    { intent: "emergency", keywords: ["emergency", "urgent", "pain", "toothache", "swelling", "bleeding", "trauma", "broken", "abscess", "infection"], priority: 5 },
-  ],
+  intentRules: activeFlowPlatformProfile.conversation.voice.treatmentDefinitions.map((definition) => ({
+    intent: definition.intent,
+    keywords: definition.keywords,
+    priority: definition.priority,
+  })),
 });
 
 const humanKeywords = ["human", "receptionist", "person", "staff", "someone", "agent", "speak to", "call me back", "talk to"];
@@ -270,7 +235,7 @@ export function buildVoiceTranscriptSummary(input: {
 }
 
 export function buildVoiceGreetingMessage(clinicName: string) {
-  return `Hello, thanks for calling ${clinicName}. You're through to ClinicFlow Dental, and I can help with appointments, emergencies, cancellations, treatment questions, or a message for the team. How can I help today?`;
+  return activeFlowPlatformProfile.conversation.voice.greeting.replace("{{clinicName}}", clinicName);
 }
 
 export function buildVoiceFollowUpPrompt(intent: VoiceIntent) {

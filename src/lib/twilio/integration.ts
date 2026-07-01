@@ -1,5 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 import { normalizePhoneNumber } from "./crypto";
 import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
@@ -21,8 +22,10 @@ import {
 import { resolveTwilioPublicOrigin, verifyTwilioSignature, type TwilioWebhookType } from "./verification";
 import type { NextRequest } from "next/server";
 
-const TWILIO_SPEAK_VOICE = "Polly.Amy-Neural";
-const TWILIO_SPEAK_LANGUAGE = "en-GB";
+const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
+const TWILIO_VOICE_PROFILE = activeFlowPlatformProfile.conversation.voice;
+const TWILIO_SPEAK_VOICE = TWILIO_VOICE_PROFILE.voice;
+const TWILIO_SPEAK_LANGUAGE = TWILIO_VOICE_PROFILE.language;
 
 export type TwilioExtendedWebhookPayload = TwilioWebhookPayload & {
   Digits?: string;
@@ -55,14 +58,18 @@ function escapeXml(value: string) {
 
 function buildSayTwiml(text: string | string[], options: { pauseMs?: number; rate?: string } = {}) {
   const segments = Array.isArray(text) ? text : String(text).split(/(?<=[.!?])\s+/);
-  const pauseMs = options.pauseMs ?? (segments.length > 1 ? 220 : 0);
+  const pauseMs = options.pauseMs ?? (segments.length > 1 ? TWILIO_VOICE_PROFILE.ssmlBreakMs : 0);
   const content = segments
     .map((segment) => segment.trim())
     .filter(Boolean)
     .map((segment) => escapeXml(segment))
     .join(pauseMs > 0 ? ` <break time="${pauseMs}ms"/> ` : " ");
 
-  return `<Say voice="${TWILIO_SPEAK_VOICE}" language="${TWILIO_SPEAK_LANGUAGE}"><prosody rate="${options.rate ?? '94%'}">${content}</prosody></Say>`;
+  if (!TWILIO_VOICE_PROFILE.ssmlEnabled) {
+    return `<Say voice="${TWILIO_SPEAK_VOICE}" language="${TWILIO_SPEAK_LANGUAGE}">${content}</Say>`;
+  }
+
+  return `<Say voice="${TWILIO_SPEAK_VOICE}" language="${TWILIO_SPEAK_LANGUAGE}"><prosody rate="${options.rate ?? TWILIO_VOICE_PROFILE.speechRate}">${content}</prosody></Say>`;
 }
 
 function buildWebhookBaseUrl(request: Request) {
@@ -72,7 +79,7 @@ function buildWebhookBaseUrl(request: Request) {
 function buildInvalidVoiceTwiml() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml(["Sorry, ClinicFlow could not verify this call right now.", "Please try again shortly."])}
+  ${buildSayTwiml([activeFlowPlatformProfile.conversation.voice.fallbackPrompt, "Please try again shortly."])}
   <Hangup />
 </Response>`;
 }
@@ -95,7 +102,7 @@ function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; 
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([`Sorry, ClinicFlow is having a little trouble just now for ${clinicName}.`, "One moment, and I will put you through to the team now."])}
+  ${buildSayTwiml([`Sorry, ClinicFlow is having a little trouble just now for ${clinicName}.`, activeFlowPlatformProfile.conversation.voice.closing])}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -113,7 +120,7 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
   <Gather action="${speechUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
     ${buildSayTwiml(buildVoiceGreetingMessage(clinicName), { pauseMs: 260 })}
   </Gather>
-  ${buildSayTwiml(["Sorry, I could not hear a response.", "One moment, and I will put you through to the team now."])}
+  ${buildSayTwiml(["Sorry, I could not hear a response.", activeFlowPlatformProfile.conversation.voice.closing])}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -147,7 +154,7 @@ function buildVoiceEmergencyTransferTwiml(input: { clinicName: string; callerId:
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([`I am sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}.`, "One moment, and I will put you through to the team immediately."])}
+  ${buildSayTwiml([activeFlowPlatformProfile.conversation.voice.emergencyPrompt, `I am sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}.`])}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>

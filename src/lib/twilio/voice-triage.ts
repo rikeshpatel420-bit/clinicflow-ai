@@ -296,7 +296,7 @@ export function buildVoiceTranscriptSummary(input: {
 }
 
 export function buildVoiceGreetingMessage(clinicName: string) {
-  return `Hello there, and thanks for calling ${clinicName}. You’re through to ClinicFlow Dental, and I can help with appointments, emergencies, cancellations, treatment questions, or a message for the team. What can I help you with today?`;
+  return `Hello, thanks for calling ${clinicName}. You're through to ClinicFlow Dental, and I can help with appointments, emergencies, cancellations, treatment questions, or a message for the team. How can I help today?`;
 }
 
 export function buildVoiceFollowUpPrompt(intent: VoiceIntent) {
@@ -304,20 +304,20 @@ export function buildVoiceFollowUpPrompt(intent: VoiceIntent) {
     case "dental_emergency":
       return "I'm sorry to hear that. Are you in severe pain, or do you have swelling, bleeding, trauma, or any trouble breathing or swallowing?";
     case "new_patient_appointment":
-      return "Lovely, let’s get your details. What’s your full name, mobile number, email if you’d like, reason for visit, and preferred day or time?";
+      return "Of course. Let's get your details. What's your full name, mobile number, email if you'd like to share it, the reason for your visit, and a preferred day or time?";
     case "existing_patient_appointment":
-      return "Of course. Please tell me your full name, date of birth if you're comfortable sharing it, mobile number, reason for calling, and preferred day or time.";
+      return "Of course. Could I have your full name, date of birth if you're comfortable sharing it, mobile number, reason for calling, and preferred day or time?";
     case "cancellation_reschedule":
-      return "No problem. Please tell me your full name, the appointment date and time if you know it, the reason, and your preferred replacement time.";
+      return "No problem. Could I have your name, the appointment date and time if you know it, the reason, and your preferred replacement time.";
     case "treatment_enquiry":
       return "Absolutely. Which treatment are you asking about, and what are the best contact details and time for the team to reach you?";
     case "pricing_enquiry":
       return "Absolutely. Prices can vary depending on the assessment, so please share your contact details and preferred time and the team can help properly.";
     case "complaint":
-      return "I'm sorry that's been frustrating. Please tell me your name, number, and what happened so we can look after it properly.";
+      return "I'm sorry that's been frustrating. Could I have your name, number, and what happened so we can look after it properly?";
     case "message_for_reception":
-      return "Certainly. Please tell me your name, number, and the message you'd like passed on to reception.";
+      return "Certainly. Could I have your name, number, and the message you'd like passed on to reception?";
     default:
-      return "Just give me a little more detail and I’ll route you to the right person.";
+      return "Just give me a little more detail and I'll route you to the right person.";
   }
 }

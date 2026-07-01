@@ -1,3 +1,5 @@
+import { createConversationEngine } from "@/lib/conversation/engine";
+
 export type VoiceIntent =
   | "dental_emergency"
   | "new_patient_appointment"
@@ -38,26 +40,57 @@ export type VoiceCaptureDetails = {
   wantsHuman: boolean;
 };
 
-const emergencyKeywords = ["emergency", "urgent", "pain", "toothache", "swelling", "bleeding", "trauma", "broken", "abscess", "infection"];
-const complaintKeywords = ["complaint", "angry", "upset", "bad service", "not happy", "frustrated"];
+const voiceConversationEngine = createConversationEngine<VoiceIntent, "email" | "fullName" | "mobileNumber" | "preferredAppointmentTime">({
+  clarificationPrompt: "Could I have a little more detail so I can help properly?",
+  escalationIntents: ["dental_emergency", "complaint"],
+  fallbackIntent: "other_unclear",
+  fallbackPrompt: "Could you tell me a little more so I can help properly?",
+  followUpPrompts: {
+    cancellation_reschedule: "No problem. Could I have your name, the appointment date and time if you know it, the reason, and your preferred replacement time?",
+    complaint: "I'm sorry that's been frustrating. Could I have your name, number, and what happened so we can look after it properly?",
+    dental_emergency: "I'm sorry to hear that. Are you in severe pain, or have you noticed any swelling, bleeding, trauma, or trouble breathing or swallowing?",
+    existing_patient_appointment: "Of course. Could I have your full name, date of birth if you're comfortable sharing it, mobile number, reason for calling, and preferred day or time?",
+    message_for_reception: "Certainly. Could I have your name, number, and the message you'd like passed on to reception?",
+    new_patient_appointment: "Of course. Let's get your details. What's your full name, mobile number, email if you'd like to share it, the reason for your visit, and a preferred day or time?",
+    other_unclear: "Just give me a little more detail and I'll route you to the right person.",
+    pricing_enquiry: "Absolutely. Prices can vary depending on the assessment, so please share your contact details and preferred time and the team can help properly.",
+    treatment_enquiry: "Absolutely. Which treatment are you asking about, and what are the best contact details and time for the team to reach you?",
+  },
+  intentRules: [
+    { intent: "dental_emergency", keywords: ["emergency", "urgent", "pain", "toothache", "swelling", "bleeding", "trauma", "broken", "abscess", "infection"], priority: 5 },
+    { intent: "new_patient_appointment", keywords: ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient"], priority: 4 },
+    { intent: "existing_patient_appointment", keywords: ["existing patient", "already a patient", "follow-up", "follow up", "review", "check my appointment", "my appointment"], priority: 4 },
+    { intent: "cancellation_reschedule", keywords: ["cancel", "cancellation", "reschedule", "move", "change my appointment", "rebook", "re-schedule"], priority: 3 },
+    { intent: "treatment_enquiry", keywords: ["treatment", "implant", "invisalign", "orthodontic", "whitening", "extraction", "wisdom tooth", "sedation", "bonding", "hygiene"], priority: 3 },
+    { intent: "pricing_enquiry", keywords: ["price", "pricing", "cost", "quote", "fee", "fees", "how much", "charge"], priority: 2 },
+    { intent: "complaint", keywords: ["complaint", "angry", "upset", "bad service", "not happy", "frustrated"], priority: 5 },
+    { intent: "message_for_reception", keywords: ["message", "pass on", "ask reception", "reception", "note", "callback"], priority: 1 },
+  ],
+  entityRules: [
+    { entity: "email", patterns: [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i], normalize: (value) => value.toLowerCase() },
+    { entity: "fullName", patterns: [/(?:my name is|i am|this is)\s+([a-z]+(?:\s+[a-z]+){0,3})/i, /name\s+(?:is|'s)?\s*([a-z]+(?:\s+[a-z]+){0,3})/i], normalize: (value) => value.replace(/\b\w/g, (letter) => letter.toUpperCase()) },
+    { entity: "mobileNumber", patterns: [/(?:\+44\s?7\d{3}[\s-]?\d{3}[\s-]?\d{3}|07\d{3}[\s-]?\d{3}[\s-]?\d{3})/i], normalize: (value) => value.replace(/\s+/g, " ").trim() },
+    { entity: "preferredAppointmentTime", patterns: [/(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening))?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?/i, /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i] },
+  ],
+});
+
+const treatmentConversationEngine = createConversationEngine<TreatmentType>({
+  fallbackIntent: "other",
+  intentRules: [
+    { intent: "implant", keywords: ["implant"], priority: 5 },
+    { intent: "invisalign_orthodontics", keywords: ["invisalign", "brace", "orthodontic", "orthodontics"], priority: 4 },
+    { intent: "hygiene", keywords: ["hygiene", "cleaning", "clean", "scale and polish"], priority: 4 },
+    { intent: "whitening", keywords: ["whitening", "white teeth"], priority: 3 },
+    { intent: "extraction", keywords: ["extraction", "remove tooth", "take out tooth"], priority: 4 },
+    { intent: "wisdom_tooth", keywords: ["wisdom tooth", "wisdom teeth"], priority: 4 },
+    { intent: "sedation", keywords: ["sedation", "sedated"], priority: 3 },
+    { intent: "cosmetic_bonding", keywords: ["bonding", "cosmetic bonding"], priority: 3 },
+    { intent: "check_up", keywords: ["check-up", "check up", "routine", "exam", "examination"], priority: 2 },
+    { intent: "emergency", keywords: ["emergency", "urgent", "pain", "toothache", "swelling", "bleeding", "trauma", "broken", "abscess", "infection"], priority: 5 },
+  ],
+});
+
 const humanKeywords = ["human", "receptionist", "person", "staff", "someone", "agent", "speak to", "call me back", "talk to"];
-const pricingKeywords = ["price", "pricing", "cost", "quote", "fee", "fees", "how much", "charge"];
-const newPatientKeywords = ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient"];
-const existingPatientKeywords = ["existing patient", "already a patient", "follow-up", "follow up", "review", "check my appointment", "my appointment"];
-const cancellationKeywords = ["cancel", "cancellation", "reschedule", "move", "change my appointment", "rebook", "re-schedule"];
-const receptionKeywords = ["message", "pass on", "ask reception", "reception", "note", "callback"];
-const treatmentKeywords: Array<{ intent: TreatmentType; keywords: string[] }> = [
-  { intent: "implant", keywords: ["implant"] },
-  { intent: "invisalign_orthodontics", keywords: ["invisalign", "brace", "orthodontic", "orthodontics"] },
-  { intent: "hygiene", keywords: ["hygiene", "cleaning", "clean", "scale and polish"] },
-  { intent: "whitening", keywords: ["whitening", "white teeth"] },
-  { intent: "extraction", keywords: ["extraction", "remove tooth", "take out tooth"] },
-  { intent: "wisdom_tooth", keywords: ["wisdom tooth", "wisdom teeth"] },
-  { intent: "sedation", keywords: ["sedation", "sedated"] },
-  { intent: "cosmetic_bonding", keywords: ["bonding", "cosmetic bonding"] },
-  { intent: "check_up", keywords: ["check-up", "check up", "routine", "exam", "examination"] },
-  { intent: "emergency", keywords: emergencyKeywords },
-];
 
 function normalizeText(text: string) {
   return text.replace(/\s+/g, " ").trim();
@@ -69,48 +102,6 @@ function lower(text: string) {
 
 function containsAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => text.includes(keyword));
-}
-
-function extractEmail(text: string) {
-  const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  return match?.[0] ?? null;
-}
-
-function extractMobileNumber(text: string) {
-  const match = text.match(/(?:\+44\s?7\d{3}[\s-]?\d{3}[\s-]?\d{3}|07\d{3}[\s-]?\d{3}[\s-]?\d{3})/);
-  return match ? match[0].replace(/\s+/g, " ").trim() : null;
-}
-
-function extractName(text: string) {
-  const patterns = [
-    /(?:my name is|i am|this is)\s+([a-z]+(?:\s+[a-z]+){0,3})/i,
-    /name\s+(?:is|'s)?\s*([a-z]+(?:\s+[a-z]+){0,3})/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      return match[1].replace(/\b\w/g, (value) => value.toUpperCase()).trim();
-    }
-  }
-
-  return null;
-}
-
-function extractPreferredTime(text: string) {
-  const patterns = [
-    /(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening))?(?:\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?/i,
-    /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[0]) {
-      return normalizeText(match[0]);
-    }
-  }
-
-  return null;
 }
 
 function detectEmergencyFlags(text: string) {
@@ -126,29 +117,11 @@ function detectEmergencyFlags(text: string) {
 }
 
 export function classifyVoiceIntent(text: string): VoiceIntent {
-  const value = lower(text);
-
-  if (containsAny(value, complaintKeywords)) return "complaint";
-  if (containsAny(value, emergencyKeywords)) return "dental_emergency";
-  if (containsAny(value, pricingKeywords)) return "pricing_enquiry";
-  if (containsAny(value, newPatientKeywords)) return "new_patient_appointment";
-  if (containsAny(value, existingPatientKeywords)) return "existing_patient_appointment";
-  if (containsAny(value, cancellationKeywords)) return "cancellation_reschedule";
-  if (containsAny(value, receptionKeywords)) return "message_for_reception";
-  if (containsAny(value, treatmentKeywords.flatMap((item) => item.keywords))) return "treatment_enquiry";
-
-  return "other_unclear";
+  return voiceConversationEngine.classifyIntent(text).intent;
 }
 
 export function classifyTreatmentType(text: string): TreatmentType {
-  const value = lower(text);
-  for (const item of treatmentKeywords) {
-    if (containsAny(value, item.keywords)) {
-      return item.intent;
-    }
-  }
-
-  return "other";
+  return treatmentConversationEngine.classifyIntent(text).intent;
 }
 
 export function estimateVoiceUrgency(intent: VoiceIntent, details: VoiceCaptureDetails) {
@@ -168,20 +141,21 @@ export function extractVoiceCaptureDetails(text: string): VoiceCaptureDetails {
   const normalized = normalizeText(text);
   const value = lower(text);
   const emergencyFlags = detectEmergencyFlags(text);
+  const extracted = voiceConversationEngine.extractEntities(text).entities;
 
   return {
     breathingOrSwallowingIssue: emergencyFlags.includes("breathing_or_swallowing"),
-    email: extractEmail(text),
-    fullName: extractName(text),
+    email: extracted.email ?? null,
+    fullName: extracted.fullName ?? null,
     hasBleeding: emergencyFlags.includes("bleeding"),
     hasPain: emergencyFlags.includes("pain"),
     hasSwelling: emergencyFlags.includes("swelling"),
     hasTrauma: emergencyFlags.includes("trauma"),
-    mobileNumber: extractMobileNumber(text),
+    mobileNumber: extracted.mobileNumber ?? null,
     nhsPrivatePreference: value.includes("nhs") ? "nhs" : value.includes("private") ? "private" : null,
-    preferredAppointmentTime: extractPreferredTime(text),
+    preferredAppointmentTime: extracted.preferredAppointmentTime ?? null,
     reason: normalized,
-    requestedDateTime: extractPreferredTime(text),
+    requestedDateTime: extracted.preferredAppointmentTime ?? null,
     wantsHuman: containsAny(value, humanKeywords),
   };
 }
@@ -300,24 +274,5 @@ export function buildVoiceGreetingMessage(clinicName: string) {
 }
 
 export function buildVoiceFollowUpPrompt(intent: VoiceIntent) {
-  switch (intent) {
-    case "dental_emergency":
-      return "I'm sorry to hear that. Are you in severe pain, or do you have swelling, bleeding, trauma, or any trouble breathing or swallowing?";
-    case "new_patient_appointment":
-      return "Of course. Let's get your details. What's your full name, mobile number, email if you'd like to share it, the reason for your visit, and a preferred day or time?";
-    case "existing_patient_appointment":
-      return "Of course. Could I have your full name, date of birth if you're comfortable sharing it, mobile number, reason for calling, and preferred day or time?";
-    case "cancellation_reschedule":
-      return "No problem. Could I have your name, the appointment date and time if you know it, the reason, and your preferred replacement time.";
-    case "treatment_enquiry":
-      return "Absolutely. Which treatment are you asking about, and what are the best contact details and time for the team to reach you?";
-    case "pricing_enquiry":
-      return "Absolutely. Prices can vary depending on the assessment, so please share your contact details and preferred time and the team can help properly.";
-    case "complaint":
-      return "I'm sorry that's been frustrating. Could I have your name, number, and what happened so we can look after it properly?";
-    case "message_for_reception":
-      return "Certainly. Could I have your name, number, and the message you'd like passed on to reception?";
-    default:
-      return "Just give me a little more detail and I'll route you to the right person.";
-  }
+  return voiceConversationEngine.buildFollowUpPrompt(intent);
 }

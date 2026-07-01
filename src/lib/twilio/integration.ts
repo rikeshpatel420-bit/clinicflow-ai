@@ -21,6 +21,9 @@ import {
 import { resolveTwilioPublicOrigin, verifyTwilioSignature, type TwilioWebhookType } from "./verification";
 import type { NextRequest } from "next/server";
 
+const TWILIO_SPEAK_VOICE = "Polly.Amy";
+const TWILIO_SPEAK_LANGUAGE = "en-GB";
+
 export type TwilioExtendedWebhookPayload = TwilioWebhookPayload & {
   Digits?: string;
   RecordingDuration?: string;
@@ -50,6 +53,10 @@ function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+function buildSayTwiml(text: string) {
+  return `<Say voice="${TWILIO_SPEAK_VOICE}" language="${TWILIO_SPEAK_LANGUAGE}">${escapeXml(text)}</Say>`;
+}
+
 function buildWebhookBaseUrl(request: Request) {
   return resolveTwilioPublicOrigin(request as NextRequest);
 }
@@ -57,7 +64,7 @@ function buildWebhookBaseUrl(request: Request) {
 function buildInvalidVoiceTwiml() {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Sorry, ClinicFlow could not verify this call right now. Please try again shortly.</Say>
+  ${buildSayTwiml("Sorry, ClinicFlow could not verify this call right now. Please try again shortly.")}
   <Hangup />
 </Response>`;
 }
@@ -80,7 +87,7 @@ function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; 
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Sorry, ClinicFlow is having trouble right now for ${clinicName}. I'm connecting you to the team.</Say>
+  ${buildSayTwiml(`Sorry, ClinicFlow is having a little trouble right now for ${clinicName}. I’m connecting you to the team now.`)}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -96,9 +103,9 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${speechUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
-    <Say voice="alice">${buildVoiceGreetingMessage(clinicName)}</Say>
+    ${buildSayTwiml(buildVoiceGreetingMessage(clinicName))}
   </Gather>
-  <Say voice="alice">Sorry, I could not hear a response. I'm connecting you to the team now.</Say>
+  ${buildSayTwiml("Sorry, I could not hear a response. I’m connecting you to the team now.")}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -111,7 +118,7 @@ function buildVoiceFollowUpTwiml(input: { clinicName: string; responseText: stri
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${responseText || `Thanks. We have logged your message for ${clinicName} and a member of the team will follow up shortly.`}</Say>
+  ${buildSayTwiml(responseText || `Thanks. We’ve logged your message for ${clinicName} and a member of the team will follow up shortly.`)}
   <Pause length="1" />
   <Hangup />
 </Response>`;
@@ -132,7 +139,7 @@ function buildVoiceEmergencyTransferTwiml(input: { clinicName: string; callerId:
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">I am sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}. I am connecting you to the team immediately for human support.</Say>
+  ${buildSayTwiml(`I’m sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}. I’m connecting you to the team immediately for human support.`)}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -145,9 +152,9 @@ function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: st
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Please leave a message for ${clinicName} after the tone.</Say>
+  ${buildSayTwiml(`Hi, you’ve reached ${clinicName}. Please leave a quick message after the tone, and we’ll get back to you as soon as we can.`)}
   <Record action="${voicemailUrl}" method="POST" maxLength="120" playBeep="true" timeout="5" transcribeCallback="${voicemailUrl}" trim="trim-silence" />
-  <Say voice="alice">We did not receive a message.</Say>
+  ${buildSayTwiml("We didn’t receive a message.")}
 </Response>`;
 }
 
@@ -156,7 +163,7 @@ function buildVoicemailFailureTwiml(input: { clinicName: string }) {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Sorry, ClinicFlow could not finish recording ${clinicName} right now. Please try again shortly.</Say>
+  ${buildSayTwiml(`Sorry, ClinicFlow could not finish recording ${clinicName} right now. Please try again shortly.`)}
   <Hangup />
 </Response>`;
 }
@@ -1401,9 +1408,9 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${followUpUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
-    <Say voice="alice">${followUpResponseText}</Say>
+    ${buildSayTwiml(followUpResponseText)}
   </Gather>
-  <Say voice="alice">I'm connecting you to the team now.</Say>
+  ${buildSayTwiml("I’m connecting you to the team now.")}
   <Dial callerId="${escapeXml(callerId)}" timeout="20">
     <Number>${escapeXml(forwardToNumber)}</Number>
   </Dial>

@@ -1,29 +1,11 @@
 import { createConversationEngine } from "@/lib/conversation/engine";
 import { buildConversationEngineConfig, getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 
-export type VoiceIntent =
-  | "dental_emergency"
-  | "new_patient_appointment"
-  | "existing_patient_appointment"
-  | "cancellation_reschedule"
-  | "treatment_enquiry"
-  | "pricing_enquiry"
-  | "complaint"
-  | "message_for_reception"
-  | "other_unclear";
+export type VoiceIntent = string;
 
-export type TreatmentType =
-  | "check_up"
-  | "hygiene"
-  | "whitening"
-  | "invisalign_orthodontics"
-  | "implant"
-  | "extraction"
-  | "wisdom_tooth"
-  | "emergency"
-  | "sedation"
-  | "cosmetic_bonding"
-  | "other";
+export type TreatmentType = string;
+
+export type VoiceEntity = "address" | "email" | "fullName" | "mobileNumber" | "phoneNumber" | "postcode" | "preferredAppointmentTime" | "preferredVisitTime";
 
 export type VoiceCaptureDetails = {
   breathingOrSwallowingIssue: boolean;
@@ -42,13 +24,21 @@ export type VoiceCaptureDetails = {
 };
 
 const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
-const voiceConversationEngine = createConversationEngine<VoiceIntent, "email" | "fullName" | "mobileNumber" | "preferredAppointmentTime">(
+const voiceConversationEngine = createConversationEngine<VoiceIntent, VoiceEntity>(
   buildConversationEngineConfig(activeFlowPlatformProfile.conversation.voice),
 );
 
+const voiceActionDefinitions =
+  activeFlowPlatformProfile.conversation.voice.actionDefinitions ??
+  activeFlowPlatformProfile.conversation.voice.treatmentDefinitions ??
+  [];
+
+const voiceIntentLabels = new Map<string, string>(activeFlowPlatformProfile.conversation.voice.intentDefinitions.map((definition) => [definition.intent, definition.label]));
+const voiceActionLabels = new Map<string, string>(voiceActionDefinitions.map((definition) => [definition.intent, definition.label]));
+
 const treatmentConversationEngine = createConversationEngine<TreatmentType>({
   fallbackIntent: "other",
-  intentRules: activeFlowPlatformProfile.conversation.voice.treatmentDefinitions.map((definition) => ({
+  intentRules: voiceActionDefinitions.map((definition) => ({
     intent: definition.intent,
     keywords: definition.keywords,
     priority: definition.priority,
@@ -67,6 +57,13 @@ function lower(text: string) {
 
 function containsAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => text.includes(keyword));
+}
+
+function titleCase(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function detectEmergencyFlags(text: string) {
@@ -126,53 +123,11 @@ export function extractVoiceCaptureDetails(text: string): VoiceCaptureDetails {
 }
 
 export function voiceIntentLabel(intent: VoiceIntent) {
-  switch (intent) {
-    case "dental_emergency":
-      return "Dental emergency";
-    case "new_patient_appointment":
-      return "New patient appointment";
-    case "existing_patient_appointment":
-      return "Existing patient appointment";
-    case "cancellation_reschedule":
-      return "Cancellation or reschedule";
-    case "treatment_enquiry":
-      return "Treatment enquiry";
-    case "pricing_enquiry":
-      return "Pricing enquiry";
-    case "complaint":
-      return "Complaint";
-    case "message_for_reception":
-      return "Message for reception";
-    default:
-      return "Other or unclear";
-  }
+  return voiceIntentLabels.get(intent) ?? titleCase(intent);
 }
 
 export function treatmentLabel(treatment: TreatmentType) {
-  switch (treatment) {
-    case "check_up":
-      return "Check-up";
-    case "hygiene":
-      return "Hygiene";
-    case "whitening":
-      return "Whitening";
-    case "invisalign_orthodontics":
-      return "Invisalign / orthodontics";
-    case "implant":
-      return "Implant";
-    case "extraction":
-      return "Extraction";
-    case "wisdom_tooth":
-      return "Wisdom tooth";
-    case "emergency":
-      return "Emergency";
-    case "sedation":
-      return "Sedation";
-    case "cosmetic_bonding":
-      return "Cosmetic bonding";
-    default:
-      return "Other";
-  }
+  return voiceActionLabels.get(treatment) ?? titleCase(treatment);
 }
 
 export function buildVoiceLeadSummary(input: {
@@ -195,7 +150,7 @@ export function buildVoiceLeadSummary(input: {
     ? "Red flag: breathing or swallowing difficulty reported. Urgent emergency care advised."
     : null;
 
-  const treatment = input.intent === "treatment_enquiry" ? `Treatment type: ${treatmentLabel(input.treatmentType)}.` : null;
+  const treatment = `Case type: ${treatmentLabel(input.treatmentType)}.`;
 
   return [
     input.details.fullName ?? input.callerNumber ?? "Caller",
@@ -221,7 +176,7 @@ export function buildVoiceTranscriptSummary(input: {
   return [
     `Intent: ${voiceIntentLabel(input.intent)}.`,
     `Urgency: ${input.urgency}/100.`,
-    `Treatment: ${treatmentLabel(input.treatmentType)}.`,
+    `Case type: ${treatmentLabel(input.treatmentType)}.`,
     input.details.reason ? `Caller said: ${input.details.reason}.` : null,
     input.details.preferredAppointmentTime ? `Preferred time: ${input.details.preferredAppointmentTime}.` : null,
     input.details.fullName ? `Name captured: ${input.details.fullName}.` : null,

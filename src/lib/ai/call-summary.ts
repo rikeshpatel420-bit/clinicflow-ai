@@ -143,7 +143,7 @@ function deriveSummaryFromContext(input: CallReceptionSummaryContext): CallRecep
         ? "Urgent clinical triage required before routine admin follow-up."
         : keywords.length > 0
           ? `Keywords detected: ${keywords.join(", ")}. Review for clinical priority before routine follow-up.`
-          : templates.clinicalSummary,
+          : templates.caseSummary ?? templates.clinicalSummary ?? "Continue standard triage.",
     followUpRecommendation:
       input.call.recovery_status === "lost"
         ? "Respect the opt-out, close the thread, and avoid further SMS follow-up."

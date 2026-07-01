@@ -27,6 +27,7 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Follow-up questions
    - Summary templates
    - SMS and email templates
+   - Urgency, escalation, and recovery rules
 
 5. Voice profile
    - Twilio voice
@@ -46,6 +47,11 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Notification rules
    - Recovery rules
 
+8. Dashboard profile
+   - Colours
+   - Icons
+   - Labels
+
 ## Folder structure
 
 ```text
@@ -58,6 +64,7 @@ src/lib/flow-platform/
   types.ts
   profiles/
     clinicflow.ts
+    plumbflow.ts
 ```
 
 ## How to add a new Flow product
@@ -124,6 +131,8 @@ ClinicFlow uses the Flow Platform profile in:
 
 That means future products can reuse the same engine and only swap the profile.
 
+PlumbFlow now proves that another vertical can live alongside ClinicFlow without changing the core platform.
+
 ## Active profile selection
 
 The runtime resolves the active profile from:
@@ -131,4 +140,4 @@ The runtime resolves the active profile from:
 1. `FLOW_PLATFORM_PROFILE_ID`
 2. The default profile, `clinicflow`
 
-This keeps ClinicFlow as the first live configuration while making the platform ready for PlumbFlow, SparkFlow, HeatFlow, VetFlow, or LegalFlow later.
+This keeps ClinicFlow as the first live configuration while making the platform ready for PlumbFlow, SparkFlow, HeatFlow, VetFlow, LegalFlow, and other future products later.

@@ -20,12 +20,13 @@ export type FlowClinicBranding = {
 
 export type FlowSummaryTemplates = {
   appointmentRecommendation: string;
-  clinicalSummary: string;
+  caseSummary: string;
   followUpRecommendation: string;
   patientSummary: string;
   receptionNotes: string;
   sms: string;
   email: string;
+  clinicalSummary?: string;
 };
 
 export type FlowMessageTemplates = {
@@ -63,11 +64,14 @@ export type FlowConversationProfile<TIntent extends string, TEntity extends stri
   clarificationPrompt: string;
   entityDefinitions: readonly FlowEntityDefinition<TEntity>[];
   escalationIntents: readonly TIntent[];
+  escalationRules: readonly string[];
   fallbackIntent: TIntent;
   fallbackPrompt: string;
   intentDefinitions: readonly FlowIntentDefinition<TIntent>[];
+  recoveryRules: readonly string[];
   summaryTemplates: FlowSummaryTemplates;
   templates: FlowMessageTemplates;
+  urgencyRules: readonly string[];
   businessHoursPrompt: string;
   conversationTone: string;
   language: string;
@@ -75,6 +79,7 @@ export type FlowConversationProfile<TIntent extends string, TEntity extends stri
 
 export type FlowVoiceProfile<TVoiceIntent extends string, TVoiceEntity extends string = never, TTreatmentIntent extends string = never> =
   FlowConversationProfile<TVoiceIntent, TVoiceEntity> & {
+    actionDefinitions: readonly FlowIntentDefinition<TTreatmentIntent>[];
     closing: string;
     emergencyPrompt: string;
     empathy: string;
@@ -84,7 +89,7 @@ export type FlowVoiceProfile<TVoiceIntent extends string, TVoiceEntity extends s
     speechRate: string;
     ssmlBreakMs: number;
     ssmlEnabled: boolean;
-    treatmentDefinitions: readonly FlowIntentDefinition<TTreatmentIntent>[];
+    treatmentDefinitions?: readonly FlowIntentDefinition<TTreatmentIntent>[];
     voice: string;
   };
 
@@ -126,6 +131,14 @@ export type FlowDashboardTheme = {
     text: string;
   };
   icons: string[];
+  labels: {
+    activeCalls: string;
+    followUp: string;
+    missedCalls: string;
+    recovery: string;
+    revenueRecovered: string;
+    responseRate: string;
+  };
 };
 
 export type FlowClinicConfig = {
@@ -156,4 +169,3 @@ export type FlowPlatformProfile<
   notifications: readonly FlowNotificationRule[];
   workflows: readonly FlowWorkflowDefinition[];
 };
-

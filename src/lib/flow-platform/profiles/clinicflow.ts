@@ -51,6 +51,7 @@ type ClinicFlowLeadEntity =
 
 const summaryTemplates = {
   appointmentRecommendation: "Offer the earliest suitable appointment and confirm the preferred callback window.",
+  caseSummary: "No urgent clinical keywords detected. Continue standard reception triage.",
   clinicalSummary: "No urgent clinical keywords detected. Continue standard reception triage.",
   followUpRecommendation: "Send staff-approved follow-up and monitor for reply.",
   patientSummary: "Patient summary pending.",
@@ -383,6 +384,16 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       fallbackIntent: "general_admin",
       fallbackPrompt: "Could you tell me a little more so I can help properly?",
       intentDefinitions: sharedLeadIntentDefinitions,
+      escalationRules: [
+        "Emergency and complaint leads should escalate immediately.",
+        "Avoid promising exact treatment outcomes or price quotes before clinical review.",
+        "Always give staff the chance to step in when the caller asks for a human.",
+      ],
+      recoveryRules: [
+        "Use the approved missed-call recovery SMS when consent exists.",
+        "If the caller opts out, stop recovery messaging and record the decision.",
+        "Keep the callback promise warm, short, and confident.",
+      ],
       summaryTemplates,
       templates: {
         email: {
@@ -400,6 +411,11 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       businessHoursPrompt: "Please route only urgent messages outside business hours.",
       conversationTone: "warm, calm, professional, British, premium private healthcare",
       language: "en-GB",
+      urgencyRules: [
+        "Breathing or swallowing difficulty is the highest emergency priority.",
+        "Pain, swelling, bleeding, or trauma should be treated as urgent.",
+        "Routine recall and pricing enquiries are lower priority unless mixed with symptoms.",
+      ],
     },
     voice: {
       clarificationPrompt: "Could I have a little more detail so I can help properly?",
@@ -436,7 +452,7 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
         ...summaryTemplates,
         receptionNotes: "Reception notes pending.",
       },
-      treatmentDefinitions: treatmentIntentDefinitions,
+      actionDefinitions: treatmentIntentDefinitions,
       templates: {
         email: {
           body: "Thanks. We've made a note and the team will follow up shortly.",
@@ -452,6 +468,22 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       },
       conversationTone: "warm, professional, confident, calm, friendly, British, polite, empathetic",
       voice: "Polly.Amy-Neural",
+      escalationRules: [
+        "Emergency or complaint calls should be escalated to a human straight away.",
+        "Always allow transfer to a receptionist if the caller asks.",
+        "Never diagnose or promise a clinical outcome on the call.",
+      ],
+      recoveryRules: [
+        "If the caller is silent or confused, fall back to the human receptionist quickly.",
+        "Keep missed-call recovery concise and reassuring.",
+        "Use the voicemail flow when the caller cannot stay on the line.",
+      ],
+      urgencyRules: [
+        "Difficulty breathing or swallowing must be treated as urgent emergency care.",
+        "Severe pain, swelling, bleeding, or trauma should score highest.",
+        "Treatment and pricing questions are lower urgency unless mixed with symptoms.",
+      ],
+      treatmentDefinitions: treatmentIntentDefinitions,
     },
   },
   dashboard: {
@@ -463,6 +495,14 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       text: "#17211f",
     },
     icons: ["phone-call", "sparkles", "calendar-check", "message-square", "shield-check"],
+    labels: {
+      activeCalls: "Active calls",
+      followUp: "Follow-up queue",
+      missedCalls: "Missed calls",
+      recovery: "Recovery",
+      revenueRecovered: "Recovered revenue",
+      responseRate: "Response rate",
+    },
   },
   id: "clinicflow",
   industry: {

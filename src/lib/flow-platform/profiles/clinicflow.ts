@@ -1,3 +1,4 @@
+import { defineFlowPlatformProfile } from "../factory";
 import type { FlowPlatformProfile } from "../types";
 
 export type ClinicFlowVoiceIntent =
@@ -352,7 +353,7 @@ const treatmentIntentDefinitions = [
   },
 ] satisfies FlowPlatformProfile<ClinicFlowVoiceIntent, ClinicFlowVoiceEntity, ClinicFlowTreatmentIntent, ClinicFlowLeadIntent, ClinicFlowLeadEntity>["conversation"]["voice"]["treatmentDefinitions"];
 
-export const clinicFlowPlatformProfile = {
+export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
   clinic: {
     appointmentRules: [
       "Offer the earliest suitable appointment and confirm the preferred callback window.",
@@ -514,4 +515,4 @@ export const clinicFlowPlatformProfile = {
     { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processTwilioCallWebhook", key: "persist-call", label: "Persist call", trigger: "twilio.call.received" },
     { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generateCallReceptionSummary", key: "generate-call-summary", label: "Generate summary", trigger: "call.summary.requested" },
   ],
-} satisfies FlowPlatformProfile<ClinicFlowVoiceIntent, ClinicFlowVoiceEntity, ClinicFlowTreatmentIntent, ClinicFlowLeadIntent, ClinicFlowLeadEntity>;
+} satisfies FlowPlatformProfile<ClinicFlowVoiceIntent, ClinicFlowVoiceEntity, ClinicFlowTreatmentIntent, ClinicFlowLeadIntent, ClinicFlowLeadEntity>);

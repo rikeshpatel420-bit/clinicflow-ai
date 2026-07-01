@@ -51,6 +51,7 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
 ```text
 src/lib/flow-platform/
   core.ts
+  factory.ts
   index.ts
   registry.ts
   runtime.ts
@@ -70,9 +71,10 @@ src/lib/flow-platform/
    - entity rules
    - templates
    - workflows
-3. Register the profile in `src/lib/flow-platform/registry.ts`
-4. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
-5. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
+3. Wrap the exported profile with `defineFlowPlatformProfile()` to keep the shape consistent
+4. Register the profile in `src/lib/flow-platform/registry.ts`
+5. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
+6. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
 
 ## How to add intents
 

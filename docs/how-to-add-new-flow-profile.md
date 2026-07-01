@@ -16,7 +16,8 @@ Flow Platform is profile-driven. To add a new product, create a configuration fo
    - `workflows`
 3. Wrap the profile with `defineFlowPlatformProfile()`
 4. Export the profile from `src/lib/flow-platform/registry.ts`
-5. Set `FLOW_PLATFORM_PROFILE_ID=<profile-id>` when you want the runtime to use it
+5. Add the profile to the `/platform` catalog if you want it visible in the UI
+6. Set `FLOW_PLATFORM_PROFILE_ID=<profile-id>` when you want the runtime to use it
 
 ## Profile checklist
 
@@ -40,4 +41,4 @@ Each profile should provide:
 - Keep workflows declarative.
 - Prefer short prompts and concise follow-up questions.
 - Reuse the shared conversation engine instead of creating custom parsers.
-
+- Add a profile page under `/platform/profiles/[profileId]` if you want a browseable internal preview.

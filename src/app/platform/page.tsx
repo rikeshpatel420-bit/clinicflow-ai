@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EventTable } from "@/components/platform/event-table";
 import { JobBoard } from "@/components/platform/job-board";
 import { ModuleCard } from "@/components/platform/module-card";
 import { PlatformShell } from "@/components/platform/platform-shell";
 import { platformConfig } from "@/lib/platform/config";
-import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
+import { getActiveFlowPlatformProfile, getFlowPlatformProfileSummaries } from "@/lib/flow-platform";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 
@@ -12,9 +13,16 @@ export const dynamic = "force-dynamic";
 
 export default async function PlatformPage() {
   const activeProfile = getActiveFlowPlatformProfile();
+  const profileSummaries = getFlowPlatformProfileSummaries();
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
   if (isSupabaseConfigured && !user) redirect("/login");
+
+  const activeVoiceIntents = activeProfile.conversation.voice.intentDefinitions;
+  const activeLeadIntents = activeProfile.conversation.leads.intentDefinitions;
+  const activeVoiceEntities = activeProfile.conversation.voice.entityDefinitions;
+  const activeLeadEntities = activeProfile.conversation.leads.entityDefinitions;
+  const activeWorkflows = activeProfile.workflows;
 
   return (
     <PlatformShell
@@ -53,6 +61,129 @@ export default async function PlatformPage() {
             The runtime resolves the active product profile from <code className="font-semibold text-[#10201d]">FLOW_PLATFORM_PROFILE_ID</code> and falls back to ClinicFlow.
           </p>
         </article>
+      </section>
+      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr_0.9fr]">
+        <article className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-[#087968]">Voice intents</p>
+              <h2 className="mt-2 text-lg font-semibold text-[#10201d]">What the receptionist understands</h2>
+            </div>
+            <span className="rounded-md bg-[#f7faf9] px-2.5 py-1 text-xs font-semibold text-[#394642]">
+              {activeVoiceIntents.length + activeLeadIntents.length} total
+            </span>
+          </div>
+          <ul className="mt-4 grid gap-2 text-sm text-[#5b6662]">
+            {activeVoiceIntents.map((intent) => (
+              <li key={intent.intent} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
+                <span className="font-semibold text-[#10201d]">{intent.label}</span>
+                <p className="mt-1 text-xs leading-5">{intent.followUpQuestion}</p>
+              </li>
+            ))}
+            {activeLeadIntents.map((intent) => (
+              <li key={intent.intent} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
+                <span className="font-semibold text-[#10201d]">{intent.label}</span>
+                <p className="mt-1 text-xs leading-5">{intent.followUpQuestion}</p>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">
+          <p className="text-sm font-semibold text-[#087968]">Entities</p>
+          <h2 className="mt-2 text-lg font-semibold text-[#10201d]">What the platform extracts</h2>
+          <ul className="mt-4 grid gap-2 text-sm text-[#5b6662]">
+            {activeVoiceEntities.map((entity) => (
+              <li key={entity.entity} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
+                <span className="font-semibold text-[#10201d]">{entity.label}</span>
+                <p className="mt-1 text-xs leading-5">{entity.entity}</p>
+              </li>
+            ))}
+            {activeLeadEntities.map((entity) => (
+              <li key={entity.entity} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
+                <span className="font-semibold text-[#10201d]">{entity.label}</span>
+                <p className="mt-1 text-xs leading-5">{entity.entity}</p>
+              </li>
+            ))}
+          </ul>
+        </article>
+        <article className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">
+          <p className="text-sm font-semibold text-[#087968]">Workflows</p>
+          <h2 className="mt-2 text-lg font-semibold text-[#10201d]">How the profile behaves</h2>
+          <ul className="mt-4 grid gap-2 text-sm text-[#5b6662]">
+            {activeWorkflows.map((workflow) => (
+              <li key={workflow.key} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
+                <span className="font-semibold text-[#10201d]">{workflow.label}</span>
+                <p className="mt-1 text-xs leading-5">{workflow.description}</p>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
+      <section className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-[#087968]">Available profiles</p>
+            <h2 className="mt-2 text-lg font-semibold text-[#10201d]">Switch the platform by profile</h2>
+            <p className="mt-2 text-sm leading-6 text-[#5b6662]">
+              These are the reusable verticals currently registered in the Flow Platform catalog.
+            </p>
+          </div>
+          <div className="rounded-md bg-[#f7faf9] px-3 py-2 text-xs font-semibold text-[#394642]">
+            Default: {activeProfile.id}
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {profileSummaries.map((profile) => {
+            const isActive = profile.id === activeProfile.id;
+
+            return (
+              <article
+                key={profile.id}
+                className={`rounded-lg border p-4 shadow-sm transition ${
+                  isActive ? "border-[#087968] bg-[#f2fbf8]" : "border-[#dce6e3] bg-[#fcfdfd]"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#65736f]">{profile.industry}</p>
+                    <h3 className="mt-2 text-base font-semibold text-[#10201d]">{profile.name}</h3>
+                  </div>
+                  {isActive ? (
+                    <span className="rounded-md bg-[#087968] px-2.5 py-1 text-xs font-semibold text-white">Active</span>
+                  ) : null}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-[#5b6662]">{profile.description}</p>
+                <dl className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#65736f]">
+                  <div className="rounded-md bg-white px-2 py-2">
+                    <dt className="font-semibold text-[#10201d]">Intents</dt>
+                    <dd className="mt-1">{profile.intentCount}</dd>
+                  </div>
+                  <div className="rounded-md bg-white px-2 py-2">
+                    <dt className="font-semibold text-[#10201d]">Entities</dt>
+                    <dd className="mt-1">{profile.entityCount}</dd>
+                  </div>
+                  <div className="rounded-md bg-white px-2 py-2">
+                    <dt className="font-semibold text-[#10201d]">Workflows</dt>
+                    <dd className="mt-1">{profile.workflowCount}</dd>
+                  </div>
+                  <div className="rounded-md bg-white px-2 py-2">
+                    <dt className="font-semibold text-[#10201d]">Voice</dt>
+                    <dd className="mt-1">{profile.voice}</dd>
+                  </div>
+                </dl>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-[#394642]">{profile.id}</span>
+                  <Link
+                    href={`/platform/profiles/${profile.id}`}
+                    className="rounded-md bg-[#10201d] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1a2f2b]"
+                  >
+                    View profile
+                  </Link>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
       <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {platformConfig.modules.map((module) => (

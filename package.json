@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "flow-platform:smoke": "npx tsx scripts/flow-platform-smoke.ts",
     "start": "next start",
     "lint": "eslint"
   },

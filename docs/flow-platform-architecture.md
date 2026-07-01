@@ -61,10 +61,13 @@ src/lib/flow-platform/
   index.ts
   registry.ts
   runtime.ts
+  catalog.ts
   types.ts
   profiles/
     clinicflow.ts
+    heatflow.ts
     plumbflow.ts
+    sparkflow.ts
 ```
 
 ## How to add a new Flow product
@@ -80,8 +83,9 @@ src/lib/flow-platform/
    - workflows
 3. Wrap the exported profile with `defineFlowPlatformProfile()` to keep the shape consistent
 4. Register the profile in `src/lib/flow-platform/registry.ts`
-5. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
-6. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
+5. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
+6. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
+7. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
 
 ## How to add intents
 
@@ -132,6 +136,8 @@ ClinicFlow uses the Flow Platform profile in:
 That means future products can reuse the same engine and only swap the profile.
 
 PlumbFlow now proves that another vertical can live alongside ClinicFlow without changing the core platform.
+
+SparkFlow and HeatFlow now act as additional vertical skeletons so new products can be added without touching the conversation engine.
 
 ## Active profile selection
 

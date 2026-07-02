@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { BusinessHealthPanel } from "@/components/dashboard/business-health-panel";
+import { BookingRequestsPanel } from "@/components/dashboard/booking-requests-panel";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DemoKpiBand } from "@/components/dashboard/demo-kpi-band";
 import { DashboardMetricCardView } from "@/components/dashboard/metric-card";
@@ -144,6 +145,7 @@ export default async function DashboardPage({
 
               <MissedCallsTable rows={dashboard.missedCalls} />
               <LeadPipeline columns={dashboard.leadColumns} />
+              <BookingRequestsPanel requests={dashboard.bookingRequests} />
             </div>
 
             <aside className="grid content-start gap-6">

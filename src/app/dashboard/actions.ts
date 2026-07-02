@@ -282,6 +282,39 @@ export async function loadDemoDataAction() {
     redirect("/dashboard?demo=error");
   }
 
+  const bookingRequests: Inserts<"booking_requests">[] = demoCases
+    .map((item, index) => {
+      if (!["booked"].includes(item.status)) return null;
+
+      const lead = insertedLeads[index];
+      const call = insertedCalls[index];
+
+      return {
+        booking_type: item.scenario.replace(/\s+/g, "_").toLowerCase(),
+        call_id: call?.id ?? null,
+        clinic_id: clinicId,
+        confirmation_reference: `DEMO-${clinicId.slice(0, 8).toUpperCase()}-${index + 1}`,
+        created_by: user.id,
+        lead_id: lead?.id ?? null,
+        next_step: "The practice will confirm the exact time shortly.",
+        notes: `${demoMarker} ${item.name}: ${item.scenario}. ${item.notes}`,
+        preferred_time: "As soon as possible",
+        requested_at: hoursAgo(4 + index),
+        source: "manual",
+        status: "requested",
+        updated_by: user.id,
+      } satisfies Inserts<"booking_requests">;
+    })
+    .filter(Boolean) as Inserts<"booking_requests">[];
+
+  if (bookingRequests.length > 0) {
+    const { error: bookingRequestsError } = await admin.from("booking_requests").insert(bookingRequests);
+
+    if (bookingRequestsError) {
+      redirect("/dashboard?demo=error");
+    }
+  }
+
   const smsEvents: Inserts<"sms_events">[] = insertedWorkflows.flatMap((workflow, index) => {
     const item = demoCases[index];
     const call = insertedCalls[index];

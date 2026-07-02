@@ -33,4 +33,9 @@ assert(voice.closing.toLowerCase().includes("here if you need anything else"), "
 assert(voice.templates.sms.missedCallRecovery.includes("I'll call you back"), "Missed-call recovery should sound personal.");
 assert(voice.templates.sms.replyYes.includes("I'll call you back shortly"), "Reply-yes SMS should sound personal.");
 
+for (const prompt of [...voice.intentDefinitions, ...(voice.treatmentDefinitions ?? [])]) {
+  const questionMarks = (prompt.followUpQuestion.match(/\?/g) ?? []).length;
+  assert(questionMarks <= 1, `ClinicFlow prompt should ask one question at a time: ${prompt.intent}`);
+}
+
 console.log("ClinicFlow voice tone smoke check passed");

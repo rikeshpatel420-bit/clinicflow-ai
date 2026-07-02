@@ -606,6 +606,69 @@ export type Database = {
         };
         Relationships: [];
       };
+      booking_requests: {
+        Row: {
+          id: string;
+          clinic_id: string;
+          call_id: string | null;
+          lead_id: string | null;
+          patient_id: string | null;
+          confirmation_reference: string;
+          source: "voice" | "sms" | "manual" | "web";
+          booking_type: string;
+          status: "requested" | "confirmed" | "cancelled" | "failed";
+          preferred_time: string | null;
+          next_step: string | null;
+          notes: string | null;
+          requested_at: string;
+          created_by: string | null;
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          clinic_id: string;
+          call_id?: string | null;
+          lead_id?: string | null;
+          patient_id?: string | null;
+          confirmation_reference: string;
+          source?: "voice" | "sms" | "manual" | "web";
+          booking_type?: string;
+          status?: "requested" | "confirmed" | "cancelled" | "failed";
+          preferred_time?: string | null;
+          next_step?: string | null;
+          notes?: string | null;
+          requested_at?: string;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          clinic_id?: string;
+          call_id?: string | null;
+          lead_id?: string | null;
+          patient_id?: string | null;
+          confirmation_reference?: string;
+          source?: "voice" | "sms" | "manual" | "web";
+          booking_type?: string;
+          status?: "requested" | "confirmed" | "cancelled" | "failed";
+          preferred_time?: string | null;
+          next_step?: string | null;
+          notes?: string | null;
+          requested_at?: string;
+          created_by?: string | null;
+          updated_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       missed_call_recovery_workflows: {
         Row: {
           id: string;
@@ -1298,6 +1361,7 @@ export type RecoveryOpportunity = Tables<"recovery_opportunities">;
 export type PatientLead = Tables<"patient_leads">;
 export type RecoveryWorkflow = Tables<"recovery_workflows">;
 export type MissedCallRecoveryWorkflow = Tables<"missed_call_recovery_workflows">;
+export type BookingRequest = Tables<"booking_requests">;
 export type SmsEvent = Tables<"sms_events">;
 export type CallRecording = Tables<"call_recordings">;
 export type VoicemailMessage = Tables<"voicemail_messages">;

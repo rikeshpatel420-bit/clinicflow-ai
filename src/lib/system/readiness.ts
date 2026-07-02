@@ -75,6 +75,7 @@ const requiredTables = [
   "clinic_users",
   "twilio_connections",
   "patient_leads",
+  "booking_requests",
   "calls",
   "recovery_workflows",
   "sms_events",

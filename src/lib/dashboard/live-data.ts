@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type {
+  BookingRequest,
   Call,
   Clinic,
   DashboardMetricSnapshot,
@@ -10,6 +11,7 @@ import type {
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isMissingRelationError } from "@/lib/twilio/db-write";
 
 export type DashboardClinicContext = Pick<Clinic, "id" | "name" | "status" | "timezone">;
 
@@ -44,7 +46,10 @@ export type WorkflowActivityItem = {
   title: string;
 };
 
+export type BookingRequestRow = Pick<BookingRequest, "booking_type" | "confirmation_reference" | "id" | "next_step" | "preferred_time" | "requested_at" | "status">;
+
 type LiveMetricTotals = {
+  bookingRequests: number;
   bookedLeads: number;
   recoveredLeads: number;
   smsReplied: number;
@@ -58,6 +63,7 @@ type LiveMetricTotals = {
 
 export type ClinicDashboardData = {
   activity: WorkflowActivityItem[];
+  bookingRequests: BookingRequestRow[];
   businessSummary: {
     aiHandledPercent: number;
     bookings: number;
@@ -114,6 +120,7 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
   const missedCalls = snapshot?.missed_calls ?? liveTotals?.missedCalls ?? 0;
   const smsSent = snapshot?.sms_sent ?? liveTotals?.smsSent ?? 0;
   const smsReplied = liveTotals?.smsReplied ?? 0;
+  const bookingRequests = Math.max(liveTotals?.bookingRequests ?? 0, liveTotals?.bookedLeads ?? 0);
   const recoveredLeads = liveTotals?.recoveredLeads ?? 0;
   const recoveryRate = missedCalls > 0 ? Math.round((recoveredLeads / missedCalls) * 100) : 0;
 
@@ -141,6 +148,12 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
       label: "SMS replied",
       tone: smsReplied > 0 ? "positive" : "neutral",
       value: String(smsReplied),
+    },
+    {
+      change: bookingRequests > 0 ? `${bookingRequests} requests` : "Live booking queue",
+      label: "Booking requests",
+      tone: bookingRequests > 0 ? "positive" : "neutral",
+      value: String(bookingRequests),
     },
     {
       change: `${recoveredLeads} recovered`,
@@ -226,6 +239,7 @@ function buildActivity(workflows: RecoveryWorkflow[]): WorkflowActivityItem[] {
 function emptyDashboard(error: string | null = null): ClinicDashboardData {
   return {
     activity: [],
+    bookingRequests: [],
     businessSummary: {
       aiHandledPercent: 0,
       bookings: 0,
@@ -268,6 +282,7 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
     { data: smsEvents, error: smsError },
     { data: leads, error: leadsError },
     { data: workflows, error: workflowsError },
+    { data: bookingRequests, error: bookingRequestsError },
   ] = await Promise.all([
     supabase.from("clinics").select("id,name,status,timezone").eq("id", membership.clinic_id).maybeSingle<DashboardClinicContext>(),
     supabase
@@ -322,15 +337,26 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .order("updated_at", { ascending: false })
       .limit(10)
       .returns<RecoveryWorkflow[]>(),
+    supabase
+      .from("booking_requests")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("requested_at", { ascending: false })
+      .limit(12)
+      .returns<BookingRequestRow[]>(),
   ]);
 
-  const loadError = clinicError || totalCallsError || missedCallsCountError || recoveredCallsCountError || callsError || smsError || leadsError || workflowsError;
+  const bookingRequestsLoadError = bookingRequestsError && !isMissingRelationError(bookingRequestsError) ? bookingRequestsError : null;
+  const loadError = clinicError || totalCallsError || missedCallsCountError || recoveredCallsCountError || callsError || smsError || leadsError || workflowsError || bookingRequestsLoadError;
   const totalCalls = totalCallsCount ?? (calls ?? []).length;
   const missedCalls = missedCallsCount ?? (calls ?? []).filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).length;
   const recoveredCalls = recoveredCallsCount ?? (calls ?? []).filter((call) => call.status === "recovered").length;
+  const bookingRequestCount = (bookingRequests ?? []).filter((request) => ["requested", "confirmed"].includes(request.status)).length;
   const smsSent = (smsEvents ?? []).filter((event) => event.direction === "outbound" && ["queued", "sent", "delivered"].includes(event.status)).length;
   const smsReplied = (smsEvents ?? []).filter((event) => event.direction === "inbound" && event.recovery_workflow_id !== null).length;
   const liveTotals: LiveMetricTotals = {
+    bookingRequests: bookingRequestCount,
     bookedLeads: (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length,
     recoveredLeads: (leads ?? []).filter((lead) => lead.status === "recovered").length,
     smsReplied,
@@ -352,9 +378,10 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
 
   return {
     activity: buildActivity(workflows ?? []),
+    bookingRequests: bookingRequests ?? [],
     businessSummary: {
       aiHandledPercent,
-      bookings: liveTotals.bookedLeads,
+      bookings: Math.max(liveTotals.bookingRequests, liveTotals.bookedLeads),
       callsToday,
       missedCalls,
       outstandingTasks,

@@ -3,6 +3,7 @@ import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
 import type { Call, CallTranscript, Clinic, Inserts, Json, Patient, PatientLead, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { generateCallReceptionSummary } from "@/lib/ai/call-summary";
 import { getBackendEnv } from "@/lib/backend/env";
+import { bookingRequestSummary, createOrUpdateBookingRequest } from "@/lib/bookings/requests";
 import { hashPhoneNumber, normalizePhoneNumber } from "./crypto";
 import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForVoiceNumber, toTwilioConnectionView } from "./config";
@@ -548,6 +549,37 @@ async function updateCallAndLeadFromReply(input: {
       .eq("id", input.lead.id)
       .eq("clinic_id", input.clinicId);
   }
+
+  if (input.replyState === "booked") {
+    const bookingResult = await createOrUpdateBookingRequest({
+      bookingType: "sms_booking_request",
+      call: input.call,
+      clinicId: input.clinicId,
+      lead: input.lead,
+      nextStep: "The practice will confirm the exact time shortly.",
+      notes: bookingRequestSummary({
+        bookingType: "sms_booking_request",
+        call: input.call,
+        clinicId: input.clinicId,
+        lead: input.lead,
+        nextStep: "The practice will confirm the exact time shortly.",
+        notes: `SMS reply: ${input.replyState}`,
+        preferredTime: null,
+        source: "sms",
+      }),
+      preferredTime: null,
+      source: "sms",
+      status: "requested",
+    });
+
+    if (bookingResult.error) {
+      logTwilioError("sms_booking_request_failed", bookingResult.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.clinicId,
+        replyState: input.replyState,
+      });
+    }
+  }
 }
 
 async function findSmsRecoveryThread(input: {
@@ -870,8 +902,12 @@ export async function refreshCallReceptionSummary(input: {
   return { error: null, summary };
 }
 
-export async function processTwilioCallWebhook(payload: TwilioWebhookPayload, options?: { refreshSummary?: boolean }) {
+export async function processTwilioCallWebhook(
+  payload: TwilioWebhookPayload,
+  options?: { minimal?: boolean; refreshSummary?: boolean },
+) {
   const shouldRefreshSummary = options?.refreshSummary ?? true;
+  const isMinimal = options?.minimal ?? false;
   const classification = classifyTwilioCall(payload);
   const connectionResult = await findTwilioConnectionForPayload(payload);
 
@@ -915,6 +951,10 @@ export async function processTwilioCallWebhook(payload: TwilioWebhookPayload, op
   const call = callResult.call;
   if (!call) {
     return { ...baseSummary, error: "Could not persist the Twilio call record.", ok: false };
+  }
+
+  if (isMinimal) {
+    return { ...baseSummary, call, ok: true };
   }
 
   const patientResult = await ensurePatientProfileForCall({

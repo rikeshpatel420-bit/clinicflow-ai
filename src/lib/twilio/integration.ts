@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { BookingRequest, Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
+import { bookingRequestSummary, createOrUpdateBookingRequest } from "@/lib/bookings/requests";
 import { normalizePhoneNumber } from "./crypto";
 import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
@@ -117,10 +118,10 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${speechUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
-    ${buildSayTwiml(buildVoiceGreetingMessage(clinicName), { pauseMs: 260 })}
+  <Gather action="${speechUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
+    ${buildSayTwiml(buildVoiceGreetingMessage(clinicName), { pauseMs: 120 })}
   </Gather>
-  ${buildSayTwiml(["Sorry, I could not hear a response.", `Thank you for calling ${clinicName}. Goodbye for now.`])}
+  ${buildSayTwiml(["Sorry, I could not hear a response.", `Thank you for calling ${clinicName}. Have a lovely day.`])}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -133,7 +134,7 @@ function buildVoiceFollowUpTwiml(input: { clinicName: string; responseText: stri
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([responseText || `Thanks. I've made a note for ${clinicName}.`, `Thank you for calling ${clinicName}.`, "Goodbye for now."])}
+  ${buildSayTwiml([responseText || `Thanks. I've made a note for ${clinicName}.`, `Thank you for calling ${clinicName}.`, "Have a lovely day."], { pauseMs: 120 })}
   <Pause length="1" />
   <Hangup />
 </Response>`;
@@ -146,11 +147,11 @@ function buildVoiceWrapUpTwiml(input: { clinicName: string; followUpUrl: string;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([responseText, "Is there anything else I can help you with today?"], { pauseMs: 220 })}
-  <Gather action="${followUpUrl}" input="speech" method="POST" speechTimeout="auto" timeout="5">
+  ${buildSayTwiml([responseText, "Is there anything else I can help you with today?"], { pauseMs: 120 })}
+  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
     ${buildSayTwiml("Take your time. I'm listening.", { pauseMs: 180 })}
   </Gather>
-  ${buildSayTwiml([`Thank you for calling ${clinicName}.`, "Goodbye for now."])}
+  ${buildSayTwiml([`Thank you for calling ${clinicName}.`, "Have a lovely day."])}
   <Hangup />
 </Response>`;
 }
@@ -596,7 +597,11 @@ function followUpPayloadFromVoicemail(input: TwilioExtendedWebhookPayload): Twil
   };
 }
 
-function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails) {
+function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, bookingRequested = false) {
+  if (bookingRequested) {
+    return "booked" as const;
+  }
+
   if (details.breathingOrSwallowingIssue || intent === "dental_emergency" || intent === "complaint") {
     return "queued" as const;
   }
@@ -604,7 +609,11 @@ function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptur
   return "drafted" as const;
 }
 
-function voiceWorkflowStateFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails) {
+function voiceWorkflowStateFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, bookingRequested = false) {
+  if (bookingRequested) {
+    return "booked" as const;
+  }
+
   if (details.breathingOrSwallowingIssue || intent === "complaint") {
     return "awaiting_staff_approval" as const;
   }
@@ -624,7 +633,11 @@ function voicePriorityFromIntent(intent: VoiceIntent, details: VoiceCaptureDetai
   return "high" as const;
 }
 
-function voiceLeadStatusFromIntent(intent: VoiceIntent) {
+function voiceLeadStatusFromIntent(intent: VoiceIntent, bookingRequested = false) {
+  if (bookingRequested) {
+    return "booked" as const;
+  }
+
   if (intent === "complaint" || intent === "dental_emergency") {
     return "contacted" as const;
   }
@@ -726,6 +739,7 @@ async function upsertVoiceTriageArtifacts(input: {
   });
   const effectivePhone = normalizePhoneNumber(input.details.mobileNumber || input.callerNumber);
   const patientName = input.details.fullName ?? (input.callerNumber ? `Caller ending ${input.callerNumber.slice(-4)}` : "Incoming caller");
+  const bookingRequested = input.stage === "collect-details" && bookingEligibleIntent(input.intent);
 
   const { data: transcriptData, error: transcriptError } = await admin
     .from("call_transcripts")
@@ -758,7 +772,7 @@ async function upsertVoiceTriageArtifacts(input: {
       });
       transcript = null;
     } else {
-      return { error: transcriptError.message, lead: null as null, patient: null as null, transcript: null as null, workflow: null as null, urgency };
+      return { error: transcriptError.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: null as null, workflow: null as null, urgency };
     }
   }
 
@@ -796,7 +810,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patient_leads",
       });
     } else {
-      return { error: existingLeadError.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingLeadError.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -819,7 +833,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patient_leads",
       });
     } else {
-      return { error: leadResult.error.message, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: leadResult.error.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -836,7 +850,7 @@ async function upsertVoiceTriageArtifacts(input: {
         clinicId: input.connection.clinic_id,
       });
     } else {
-      return { error: existingPatientError.message, lead: lead ?? null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingPatientError.message, bookingRequest: null as null, lead: lead ?? null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -873,7 +887,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patients",
       });
     } else {
-      return { error: patientResult.error.message, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: patientResult.error.message, bookingRequest: null as null, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
   const patient = patientResult.data ?? existingPatient ?? null;
@@ -903,7 +917,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "recovery_workflows",
       });
     } else {
-      return { error: existingWorkflow.error.message, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingWorkflow.error.message, bookingRequest: null as null, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -943,6 +957,7 @@ async function upsertVoiceTriageArtifacts(input: {
     } else {
       return {
         error: workflowResult.error.message,
+        bookingRequest: null as null,
         lead: lead ?? null,
         patient: patient ?? existingPatient ?? null,
         transcript: transcript ?? null,
@@ -952,17 +967,85 @@ async function upsertVoiceTriageArtifacts(input: {
     }
   }
 
+  let bookingRequest: BookingRequest | null = null;
+  if (bookingRequested) {
+    const workflowRecord = workflowResult.data ?? existingWorkflow.data ?? null;
+    const bookingResult = await createOrUpdateBookingRequest({
+      bookingType: input.intent,
+      call: input.call,
+      clinicId: input.connection.clinic_id,
+      createdByUserId: input.connection.created_by,
+      lead,
+      nextStep: "The practice will confirm the exact time shortly.",
+      notes: bookingRequestSummary({
+        bookingType: input.intent,
+        call: input.call,
+        clinicId: input.connection.clinic_id,
+        lead,
+        nextStep: "The practice will confirm the exact time shortly.",
+        patient,
+        preferredTime: input.details.preferredAppointmentTime ?? input.details.requestedDateTime ?? null,
+        source: "voice",
+        notes: transcriptSummary,
+      }),
+      patient,
+      preferredTime: input.details.preferredAppointmentTime ?? input.details.requestedDateTime ?? null,
+      source: "voice",
+      status: "requested",
+      updatedByUserId: input.connection.created_by,
+      workflow: workflowResult.data ?? existingWorkflow.data ?? null,
+    });
+
+    if (bookingResult.error) {
+      logTwilioError("voice_booking_request_failed", bookingResult.error, {
+        callSid: input.call.provider_call_id ?? input.call.id,
+        clinicId: input.connection.clinic_id,
+        intent: input.intent,
+      });
+    } else {
+      bookingRequest = bookingResult.bookingRequest;
+
+      if (lead) {
+        await admin
+          .from("patient_leads")
+          .update({
+            converted_at: now,
+            next_follow_up_at: null,
+            status: "booked",
+            updated_at: now,
+          })
+          .eq("id", lead.id)
+          .eq("clinic_id", input.connection.clinic_id);
+      }
+
+      if (workflowRecord) {
+        await admin
+          .from("recovery_workflows")
+          .update({
+            current_step: Math.max(workflowRecord.current_step ?? 1, 3),
+            next_action_at: null,
+            state: "booked",
+            updated_at: now,
+          })
+          .eq("id", workflowRecord.id)
+          .eq("clinic_id", input.connection.clinic_id);
+      }
+    }
+  }
+
   const callStatus = input.details.breathingOrSwallowingIssue ? "answered" : "answered";
-  const callRecoveryStatus = voiceRecoveryStatusFromIntent(input.intent, input.details);
+  const callRecoveryStatus = voiceRecoveryStatusFromIntent(input.intent, input.details, Boolean(bookingRequest));
   const { data: updatedCall, error: callUpdateError } = await admin
     .from("calls")
     .update({
       ended_at: null,
       lead_id: lead?.id ?? input.call.lead_id ?? null,
-      recovery_next_action: nextAction,
+      recovery_next_action: bookingRequest
+        ? "I've booked your appointment request and the practice will confirm the exact time shortly."
+        : nextAction,
       recovery_status: callRecoveryStatus,
       recovery_updated_at: now,
-      status: callStatus,
+      status: bookingRequest ? "recovered" : callStatus,
       updated_at: now,
     })
     .eq("id", input.call.id)
@@ -971,11 +1054,28 @@ async function upsertVoiceTriageArtifacts(input: {
     .single<Call>();
 
   if (callUpdateError) {
+    logTwilioError("voice_call_update_failed", callUpdateError, {
+      callSid: input.call.provider_call_id ?? input.call.id,
+      clinicId: input.connection.clinic_id,
+    });
+    const fallbackUpdatedCall = {
+      ...input.call,
+      lead_id: lead?.id ?? input.call.lead_id ?? null,
+      recovery_next_action: bookingRequest
+        ? "I've booked your appointment request and the practice will confirm the exact time shortly."
+        : nextAction,
+      recovery_status: callRecoveryStatus,
+      recovery_updated_at: now,
+      status: bookingRequest ? "recovered" : callStatus,
+      updated_at: now,
+    } as Call;
     return {
-      error: callUpdateError.message,
+      error: null,
+      bookingRequest: bookingRequest ?? null,
       lead: lead ?? null,
       patient: patient ?? existingPatient ?? null,
       transcript: transcript ?? null,
+      updatedCall: fallbackUpdatedCall,
       workflow: workflowResult.data ?? existingWorkflow.data ?? null,
       urgency,
     };
@@ -983,6 +1083,7 @@ async function upsertVoiceTriageArtifacts(input: {
 
   return {
     error: null,
+    bookingRequest,
     lead: lead ?? null,
     patient: patient ?? existingPatient ?? null,
     transcript: transcript ?? null,
@@ -1004,37 +1105,50 @@ function detailsFollowUpAt(intent: VoiceIntent, details: VoiceCaptureDetails) {
   return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 }
 
+function bookingEligibleIntent(intent: VoiceIntent) {
+  return [
+    "new_patient_appointment",
+    "existing_patient_appointment",
+    "cancellation_reschedule",
+    "treatment_enquiry",
+    "pricing_enquiry",
+  ].includes(intent);
+}
+
 function voiceCompletionResponseText(input: {
   clinicName: string;
   details: VoiceCaptureDetails;
   intent: VoiceIntent;
+  bookingReference?: string | null;
   treatmentType: ReturnType<typeof classifyTreatmentType>;
 }) {
-  const clinicPrefix = `Perfect. I've made a note for ${input.clinicName}.`;
+  const bookingLine = input.bookingReference
+    ? `I've booked your appointment request and the practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
+    : `I've made a note for ${input.clinicName}, and the practice will confirm the next step shortly.`;
 
   if (input.details.breathingOrSwallowingIssue) {
-    return `${clinicPrefix} Because you mentioned breathing or swallowing difficulty, this needs urgent emergency care now.`;
+    return `${bookingLine} Because you mentioned breathing or swallowing difficulty, this needs urgent emergency care now.`;
   }
 
   switch (input.intent) {
     case "dental_emergency":
-      return `${clinicPrefix} This is marked as urgent, and I'll help get the earliest emergency review arranged.`;
+      return `${bookingLine} This is marked as urgent, and I'll help get the earliest emergency review arranged.`;
     case "new_patient_appointment":
-      return `${clinicPrefix} I’ll help get the appointment arranged as soon as possible.`;
+      return `${bookingLine} I've noted the details you gave me.`;
     case "existing_patient_appointment":
-      return `${clinicPrefix} I’ll help the practice get the best appointment option sorted.`;
+      return `${bookingLine} I've noted the details you gave me.`;
     case "cancellation_reschedule":
-      return `${clinicPrefix} I’ve noted the change and I’ll help get a new slot sorted.`;
+      return `${bookingLine} I've noted the change for the practice.`;
     case "treatment_enquiry":
-      return `${clinicPrefix} Your ${treatmentLabel(input.treatmentType).toLowerCase()} enquiry has been noted, and I’ll help arrange the next step.`;
+      return `${bookingLine} Your ${treatmentLabel(input.treatmentType).toLowerCase()} enquiry has been noted.`;
     case "pricing_enquiry":
-      return `${clinicPrefix} Prices vary depending on clinical assessment, and I’ve noted your request for the right guidance.`;
+      return `${bookingLine} Prices vary depending on clinical assessment, and I've noted your request for the right guidance.`;
     case "complaint":
-      return `I’m sorry about that. I’ve logged it for ${input.clinicName} and I’ll connect you to the right person now.`;
+      return `I'm sorry about that. I've logged it for ${input.clinicName}, and I'll connect you to the right person now.`;
     case "message_for_reception":
-      return `${clinicPrefix} I’ll pass your message on now.`;
+      return `${bookingLine} I'll pass your message on now.`;
     default:
-      return `${clinicPrefix} I’ve got the details, and I’ll make sure the next step is handled properly.`;
+      return `${bookingLine} I've got the details, and I'll make sure the next step is handled properly.`;
   }
 }
 
@@ -1071,7 +1185,7 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
       Called: payload.Called || connection.voice_number,
       From: payload.From || "",
     },
-    { refreshSummary: false },
+    { minimal: true, refreshSummary: false },
   );
   if (!result.ok || !("call" in result) || !result.call) {
     logTwilioError("voice_failed", result.error ?? "Twilio voice webhook failed", {
@@ -1399,21 +1513,6 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
     });
-    return new Response(
-      buildVoiceFailureTwiml({
-        clinicName,
-        callerId,
-        forwardToNumber,
-      }),
-      {
-        headers: {
-          "Content-Type": "text/xml",
-          "X-ClinicFlow-Processed": "false",
-          "X-ClinicFlow-Test-Mode": String(auth.testMode),
-        },
-        status: 200,
-      },
-    );
   }
 
   const nextPrompt = buildVoiceFollowUpPrompt(intent);
@@ -1421,6 +1520,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     stage === "collect-details"
       ? voiceCompletionResponseText({
           clinicName: clinicName ?? "ClinicFlow clinic",
+          bookingReference: artifactResult.bookingRequest?.confirmation_reference ?? null,
           details,
           intent,
           treatmentType,
@@ -1461,10 +1561,10 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     return new Response(
       `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${followUpUrl}" input="speech" method="POST" speechTimeout="auto" timeout="6">
+  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
     ${buildSayTwiml(followUpResponseText)}
   </Gather>
-  ${buildSayTwiml(["Thank you for that.", "I will make sure it is noted. Goodbye for now."])}
+  ${buildSayTwiml(["Thank you for that.", "I will make sure it is noted. Have a lovely day."])}
 </Response>`,
       {
         headers: {

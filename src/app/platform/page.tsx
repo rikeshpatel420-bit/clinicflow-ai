@@ -96,6 +96,9 @@ export default async function PlatformPage() {
                 <Link href="/platform/foundation" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
                   SaaS foundation
                 </Link>
+                <Link href="/saas" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
+                  Commercial control plane
+                </Link>
                 <Link href="/platform/profiles" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
                   Compare profiles
                 </Link>

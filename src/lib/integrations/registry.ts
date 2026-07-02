@@ -43,6 +43,62 @@ export const providerRegistry: ProviderDefinition[] = [
     description: "Calendar connector placeholder for availability checks and appointment visibility.",
     supportedObjects: ["calendars", "events", "availability"],
   },
+  {
+    key: "microsoft_365",
+    name: "Microsoft 365",
+    category: "calendar",
+    description: "Microsoft 365 placeholder for Outlook calendars, mailboxes, and staff scheduling.",
+    supportedObjects: ["calendars", "mailboxes", "availability"],
+  },
+  {
+    key: "email",
+    name: "Email",
+    category: "communications",
+    description: "Generic email transport placeholder for confirmations, reminders, and follow-ups.",
+    supportedObjects: ["messages", "templates", "delivery_status"],
+  },
+  {
+    key: "whatsapp",
+    name: "WhatsApp",
+    category: "communications",
+    description: "WhatsApp interface placeholder for future conversational follow-up delivery.",
+    supportedObjects: ["messages", "templates", "delivery_status"],
+  },
+  {
+    key: "stripe",
+    name: "Stripe",
+    category: "billing",
+    description: "Billing and subscription placeholder for plans, invoices, payments, and entitlements.",
+    supportedObjects: ["plans", "subscriptions", "invoices", "usage"],
+  },
+  {
+    key: "webhooks",
+    name: "Webhooks",
+    category: "webhooks",
+    description: "Webhook delivery placeholder for inbound events and downstream automation triggers.",
+    supportedObjects: ["events", "deliveries", "retries"],
+  },
+  {
+    key: "zapier",
+    name: "Zapier",
+    category: "automation",
+    description: "Zapier connector placeholder for no-code automations and external workflow handoffs.",
+    supportedObjects: ["triggers", "actions", "tasks"],
+  },
+  {
+    key: "make",
+    name: "Make",
+    category: "automation",
+    description: "Make connector placeholder for visual automation scenarios and routed actions.",
+    supportedObjects: ["scenarios", "routers", "webhooks"],
+  },
+  {
+    key: "n8n",
+    name: "n8n",
+    category: "automation",
+    description: "n8n connector placeholder for self-hosted automation flows and low-code orchestration.",
+    supportedObjects: ["workflows", "triggers", "webhooks"],
+  },
 ];
 
 export function getProviderName(key: ProviderDefinition["key"]) {

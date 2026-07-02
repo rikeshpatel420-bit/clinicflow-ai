@@ -9,6 +9,7 @@
     "flow-factory:smoke": "npx tsx scripts/flow-factory-smoke.ts",
     "flow-products:smoke": "npx tsx scripts/flow-products-smoke.ts",
     "flow-workflow:smoke": "npx tsx scripts/flow-workflow-smoke.ts",
+    "saas:smoke": "npx tsx scripts/saas-smoke.ts",
     "start": "next start",
     "lint": "eslint"
   },

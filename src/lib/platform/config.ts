@@ -18,7 +18,12 @@ export const platformConfig = {
   },
   modules: [
     { id: "core-auth", name: "Tenant auth shell", area: "core", status: "active", description: "Clinic-scoped account and role foundation." },
+    { id: "tenant-engine", name: "Tenant engine", area: "core", status: "active", description: "Organisations, workspaces, branches, roles, permissions, and isolation helpers." },
     { id: "saas-foundation", name: "SaaS foundation", area: "enterprise", status: "active", description: "Reusable tenancy, billing, permissions, feature flags, API keys, and audit primitives." },
+    { id: "billing", name: "Billing abstraction", area: "enterprise", status: "active", description: "Plans, trials, usage limits, seats, and entitlements ready for Stripe wiring." },
+    { id: "marketplace", name: "Product marketplace", area: "enterprise", status: "beta", description: "Profile-driven product activation across the Flow platform catalog." },
+    { id: "readiness", name: "Readiness dashboard", area: "enterprise", status: "active", description: "First-customer go-live checks across voice, AI, billing, onboarding, and integrations." },
+    { id: "ai-studio", name: "AI studio", area: "core", status: "active", description: "Prompt, tone, escalation, and receptionist wording customisation." },
     { id: "events", name: "Internal event bus", area: "core", status: "beta", description: "Audit-safe event structure for workflows and notifications." },
     { id: "notifications", name: "Notification engine", area: "core", status: "active", description: "Profile-aware SMS, email, and internal notification dispatch." },
     { id: "audit", name: "Audit engine", area: "core", status: "active", description: "Reusable audit records for workflows, AI, escalation, and notifications." },
@@ -32,6 +37,9 @@ export const platformConfig = {
   featureFlags: [
     { key: "ai_receptionist_demo", label: "AI receptionist demo", state: "enabled", scope: "clinic" },
     { key: "business_onboarding_wizard", label: "Business onboarding wizard", state: "enabled", scope: "clinic" },
+    { key: "product_marketplace", label: "Product marketplace", state: "enabled", scope: "enterprise" },
+    { key: "billing_foundation", label: "Billing foundation", state: "enabled", scope: "enterprise" },
+    { key: "tenant_engine", label: "Tenant engine", state: "enabled", scope: "enterprise" },
     { key: "enterprise_governance", label: "Enterprise governance", state: "enterprise", scope: "enterprise" },
     { key: "live_twilio_webhooks", label: "Live Twilio webhooks", state: "disabled", scope: "internal" },
     { key: "stripe_billing", label: "Stripe billing", state: "disabled", scope: "internal" },

@@ -18,6 +18,14 @@ export function buildSaasCapabilityCatalog(): SaasCapability[] {
     },
     {
       area: "core",
+      description: "The tenant, workspace, branch, and role model is surfaced in the commercial control plane for operators.",
+      evidence: ["src/lib/saas/commercial.ts", "/saas", "/organisation"],
+      id: "tenant-workspaces",
+      label: "Tenant workspaces",
+      status: "active",
+    },
+    {
+      area: "core",
       description: "Roles and permissions define who can read patients, manage billing, invite staff, and adjust governance.",
       evidence: ["src/lib/permissions/roles.ts", "/team", "/settings"],
       id: "roles-permissions",
@@ -42,10 +50,26 @@ export function buildSaasCapabilityCatalog(): SaasCapability[] {
     },
     {
       area: "commercial",
+      description: "The commercial control plane brings billing, marketplace activation, onboarding, and readiness into one view.",
+      evidence: ["src/app/saas/page.tsx", "/saas", "/platform/foundation"],
+      id: "commercial-control-plane",
+      label: "Commercial control plane",
+      status: "active",
+    },
+    {
+      area: "commercial",
       description: "Usage and entitlement guards make it possible to sell by clinic, seat, and activity limits.",
       evidence: ["src/lib/billing/quotas.ts", "src/lib/billing/middleware.ts"],
       id: "usage-entitlements",
       label: "Usage and entitlements",
+      status: "active",
+    },
+    {
+      area: "commercial",
+      description: "AI prompt, tone, and receptionist wording are configurable without changing the conversation engine.",
+      evidence: ["src/app/saas/page.tsx", "src/lib/onboarding/engine.ts", "src/lib/flow-platform/profiles/*"],
+      id: "ai-studio",
+      label: "AI studio",
       status: "active",
     },
     {
@@ -71,6 +95,14 @@ export function buildSaasCapabilityCatalog(): SaasCapability[] {
       id: "integration-marketplace",
       label: "Integration marketplace",
       status: "beta",
+    },
+    {
+      area: "marketplace",
+      description: "Profile-driven product activation lets businesses choose ClinicFlow, PlumbFlow, SparkFlow, HeatFlow, BuildFlow, EstateFlow, or VetFlow.",
+      evidence: ["src/lib/flow-platform/registry.ts", "/platform/profiles", "/saas"],
+      id: "product-marketplace",
+      label: "Product marketplace",
+      status: "active",
     },
     {
       area: "governance",

@@ -13,6 +13,9 @@ It turns a business blueprint into a generated package containing:
 - default dashboard cards
 - voice profile
 - AI prompt
+- AI studio defaults
+- tenant and workspace defaults
+- billing readiness notes
 - notification templates
 - workflow blueprints
 - workflow definitions
@@ -64,6 +67,7 @@ The generated package now sits beside the shared SaaS foundation, which means te
 5. Register the profile in the Flow Platform registry
 6. Switch `FLOW_PLATFORM_PROFILE_ID` when you want the runtime to use it
 7. Open `/platform/foundation` to review the shared platform capabilities every generated product inherits
+8. Open `/saas` to review the commercial control plane above the product layer
 
 ## Notes
 

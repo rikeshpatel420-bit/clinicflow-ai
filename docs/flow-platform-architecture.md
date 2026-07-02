@@ -100,6 +100,14 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Audit and production-readiness snapshot
    - Internal `/platform/foundation` view
 
+13. Commercial control plane
+   - `/saas` readiness dashboard
+   - Marketplace activation view
+   - Tenant, workspace, and branch snapshot
+   - AI studio prompt controls
+   - Integration readiness overview
+   - Security and GDPR notes
+
 ## Folder structure
 
 ```text
@@ -117,6 +125,7 @@ src/lib/flow-platform/
   registry.ts
   runtime.ts
   catalog.ts
+  commercial.ts
   templates.ts
   timeline.ts
   workflow-engine.ts
@@ -138,6 +147,9 @@ src/app/platform/
   profiles/page.tsx
   profiles/[profileId]/page.tsx
   workflows/page.tsx
+src/app/saas/
+  loading.tsx
+  page.tsx
 src/app/onboarding/
   actions.ts
   business-onboarding-wizard.tsx

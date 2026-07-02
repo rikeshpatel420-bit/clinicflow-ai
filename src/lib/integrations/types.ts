@@ -1,5 +1,19 @@
-export type ProviderKey = "dentally" | "soe" | "exact" | "hubspot" | "twilio" | "google_calendar";
-export type ProviderCategory = "practice_management" | "crm" | "communications" | "calendar";
+export type ProviderKey =
+  | "dentally"
+  | "soe"
+  | "exact"
+  | "hubspot"
+  | "twilio"
+  | "google_calendar"
+  | "microsoft_365"
+  | "email"
+  | "whatsapp"
+  | "stripe"
+  | "webhooks"
+  | "zapier"
+  | "make"
+  | "n8n";
+export type ProviderCategory = "practice_management" | "crm" | "communications" | "calendar" | "billing" | "automation" | "webhooks";
 export type IntegrationStatus = "not_connected" | "connected" | "degraded" | "paused" | "error";
 export type SyncJobStatus = "queued" | "running" | "completed" | "failed" | "retrying";
 

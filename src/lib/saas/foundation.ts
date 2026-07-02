@@ -15,7 +15,7 @@ function currentTenantFromReadiness(readiness: Awaited<ReturnType<typeof buildPr
 
   return {
     clinicId: readiness.clinic.id,
-    organisationId: null,
+    organisationId: readiness.clinic.id,
     role: readiness.clinic.role ?? demoTenantContext.role,
     source: "supabase" as const,
   } satisfies TenantContext;

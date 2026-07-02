@@ -36,6 +36,14 @@ The internal `/platform/foundation` route composes:
 - providers and audit surfaces
 - production readiness blockers
 
+The companion `/saas` route adds:
+
+- tenant and workspace summary
+- billing plan catalogue and subscription view
+- product marketplace activation state
+- onboarding health and AI studio settings
+- integration readiness and security notes
+
 ## Adding a future Flow product
 
 1. Create the vertical profile in `src/lib/flow-platform/profiles/`.

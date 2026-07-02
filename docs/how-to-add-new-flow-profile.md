@@ -24,6 +24,7 @@ Flow Platform is profile-driven. To add a new product, create a configuration fo
 9. Reuse the shared notification, audit, timeline, event, and customer helpers rather than inventing product-specific services
 10. Open `/platform/profiles` to verify the new profile passes the internal validator before considering it production-ready
 11. Open `/platform/foundation` to confirm the shared SaaS layer is still healthy and nothing about the profile requires a platform rewrite
+12. Open `/saas` to confirm the commercial control plane recognises the profile, marketplace activation state, readiness score, and onboarding health
 
 ## Profile checklist
 

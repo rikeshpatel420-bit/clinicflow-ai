@@ -57,3 +57,4 @@ Each profile should provide:
 - Add a profile page under `/platform/profiles/[profileId]` if you want a browseable internal preview.
 - Reuse the standard contact entity helpers before adding one-off entity patterns.
 - Keep the Flow Factory output as the source of truth for the new product blueprint so future profiles stay config-driven.
+- For a real customer workspace, use the onboarding engine so the clinic or business instance is created from the same configuration layer before it is marked ready.

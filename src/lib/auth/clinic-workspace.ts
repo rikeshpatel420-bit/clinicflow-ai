@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { syncOnboardingProfile } from "@/lib/onboarding";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppUser, ClinicUser } from "@/types/database";
@@ -254,5 +255,13 @@ export async function createClinicWorkspaceForUser({
     return { error: "Could not create the owner membership." };
   }
 
-  return { clinicId: clinic.id, error: null };
+  const profileId = await syncOnboardingProfile({
+    businessName: clinicName,
+    clinicId: clinic.id,
+    email: user.email ?? null,
+    fullName,
+    userId: appUser.id,
+  });
+
+  return { appUserId: appUser.id, clinicId: clinic.id, error: null, profileId };
 }

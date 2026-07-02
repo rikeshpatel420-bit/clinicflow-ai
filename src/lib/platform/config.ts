@@ -23,12 +23,14 @@ export const platformConfig = {
     { id: "audit", name: "Audit engine", area: "core", status: "active", description: "Reusable audit records for workflows, AI, escalation, and notifications." },
     { id: "timeline", name: "Timeline engine", area: "core", status: "active", description: "Unified customer activity timeline across calls, notes, tasks, and messages." },
     { id: "customer-360", name: "Customer 360", area: "core", status: "active", description: "Shared customer model for contact, history, and conversation data." },
+    { id: "onboarding", name: "Customer onboarding", area: "core", status: "active", description: "Business setup wizard, brand engine, prompt studio, and self-validation package generation." },
     { id: "providers", name: "Provider abstraction", area: "integration", status: "active", description: "Connector-agnostic provider registry and sync model." },
     { id: "jobs", name: "Queue and scheduler", area: "automation", status: "planned", description: "Deterministic job architecture for future background processing." },
     { id: "search", name: "Global search", area: "enterprise", status: "planned", description: "Search framework across patients, calls, tasks, and clinics." },
   ] satisfies PlatformModule[],
   featureFlags: [
     { key: "ai_receptionist_demo", label: "AI receptionist demo", state: "enabled", scope: "clinic" },
+    { key: "business_onboarding_wizard", label: "Business onboarding wizard", state: "enabled", scope: "clinic" },
     { key: "enterprise_governance", label: "Enterprise governance", state: "enterprise", scope: "enterprise" },
     { key: "live_twilio_webhooks", label: "Live Twilio webhooks", state: "disabled", scope: "internal" },
     { key: "stripe_billing", label: "Stripe billing", state: "disabled", scope: "internal" },
@@ -43,11 +45,13 @@ export const platformConfig = {
     { id: "evt-1", topic: "patient.lead_scored", producer: "revenue-ops", consumer: "notifications", auditSafe: true, createdAt: "Today 10:14" },
     { id: "evt-2", topic: "workflow.escalated", producer: "automation-engine", consumer: "activity-feed", auditSafe: true, createdAt: "Today 10:18" },
     { id: "evt-3", topic: "sync.job_retry", producer: "sync-engine", consumer: "admin-monitor", auditSafe: true, createdAt: "Today 10:22" },
+    { id: "evt-4", topic: "business.onboarded", producer: "onboarding-engine", consumer: "platform-health", auditSafe: true, createdAt: "Today 10:27" },
   ] satisfies PlatformEvent[],
   health: [
     { service: "Next.js app shell", status: "operational", uptime: "99.99%" },
     { service: "Supabase connection layer", status: "operational", uptime: "live" },
     { service: "Internal queues", status: "operational", uptime: "profile-driven" },
+    { service: "Onboarding engine", status: "operational", uptime: "wizard-driven" },
     { service: "Webhook gateway", status: "operational", uptime: "ready" },
   ],
 };

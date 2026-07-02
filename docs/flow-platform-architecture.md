@@ -70,7 +70,17 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Mandatory section checks
    - Missing-configuration reporting
 
-10. Flow Factory
+10. Customer onboarding
+   - Business setup wizard
+   - Brand engine
+   - Prompt studio
+   - Knowledge base
+   - Booking abstraction
+   - Organisation model
+   - Settings engine
+   - Business self-validation
+
+11. Flow Factory
    - Blueprint capture wizard
    - Generated route plans
    - Generated documentation
@@ -110,11 +120,19 @@ src/lib/flow-platform/
     plumbflow.ts
     sparkflow.ts
     vetflow.ts
+src/lib/onboarding/
+  engine.ts
+  persistence.ts
+  types.ts
 src/app/platform/
   page.tsx
   profiles/page.tsx
   profiles/[profileId]/page.tsx
   workflows/page.tsx
+src/app/onboarding/
+  actions.ts
+  business-onboarding-wizard.tsx
+  page.tsx
 src/lib/flow-factory/
   generator.ts
   index.ts
@@ -141,7 +159,7 @@ src/lib/flow-factory/
 6. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
 7. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
 8. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
-9. Use Flow Factory to generate the new product package, documentation, and smoke tests from a configuration wizard
+9. Use Flow Factory and the customer onboarding engine to generate the new product package, documentation, and smoke tests from configuration wizards
 
 ## Shared platform services
 
@@ -241,6 +259,7 @@ SparkFlow and HeatFlow now act as additional vertical skeletons so new products 
 BuildFlow and EstateFlow now show the same pattern in construction and property, using the shared profile builder instead of copy-pasted setup code.
 
 Flow Factory adds a configuration layer on top of the profile registry so new verticals can be described once and packaged without touching the platform core.
+Customer onboarding adds a business-instance layer on top of that so a tenant can be created, branded, validated, and marked ready without writing bespoke setup code.
 The workflow engine sits underneath those profiles so every product can describe what happens after an enquiry, missed call, booking request, escalation, or follow-up event.
 The profile comparison page at `/platform/profiles` shows the installed product set, validation state, workflow counts, template counts, and shared inheritance so the team can verify that a new vertical only changes configuration.
 

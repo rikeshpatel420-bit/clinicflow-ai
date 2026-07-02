@@ -14,12 +14,14 @@ Flow Platform is profile-driven. To add a new product, create a configuration fo
    - `knowledgeBase`
    - `notifications`
    - `workflows`
+   - optional template overrides
 3. Prefer the shared helpers in `src/lib/flow-platform/profile-builder.ts`
 4. Wrap the profile with `createFlowPlatformProfile()` or `defineFlowPlatformProfile()`
 5. Export the profile from `src/lib/flow-platform/registry.ts`
 6. Add the profile to the `/platform` catalog if you want it visible in the UI
 7. Set `FLOW_PLATFORM_PROFILE_ID=<profile-id>` when you want the runtime to use it
 8. Use `/factory` if you want the same blueprint captured as a generated configuration package, route plan, docs bundle, and smoke test
+9. Reuse the shared notification, audit, timeline, event, and customer helpers rather than inventing product-specific services
 
 ## Profile checklist
 
@@ -36,6 +38,10 @@ Each profile should provide:
 - SMS and email templates
 - dashboard labels and icons
 - workflow triggers, steps, actions, fallback rules, and audit trail settings
+- notification templates and profile-aware overrides
+- reusable customer 360 fields
+- timeline-friendly audit metadata
+- Flow Factory defaults for navigation, workflow blueprints, and sample automation rules
 
 ## Good practice
 
@@ -45,6 +51,7 @@ Each profile should provide:
 - Use triggers, conditions, steps, and actions instead of hard-coding branch logic.
 - Prefer short prompts and concise follow-up questions.
 - Reuse the shared conversation engine instead of creating custom parsers.
+- Reuse the shared notification engine and event bus for transport and cross-module communication.
 - Add a profile page under `/platform/profiles/[profileId]` if you want a browseable internal preview.
 - Reuse the standard contact entity helpers before adding one-off entity patterns.
 - Keep the Flow Factory output as the source of truth for the new product blueprint so future profiles stay config-driven.

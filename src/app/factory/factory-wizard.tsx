@@ -121,6 +121,16 @@ function GeneratedPreview({ generated }: { generated: FlowFactoryGeneratedProfil
       </section>
 
       <section className={sectionClassName()}>
+        <p className="text-sm font-semibold text-[#087968]">Platform defaults</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <ResultCard label="Navigation items" value={String(generated.platformDefaults.navigation.length)} />
+          <ResultCard label="Dashboard cards" value={String(generated.platformDefaults.dashboardCards.length)} />
+          <ResultCard label="Notification templates" value={String(generated.platformDefaults.notificationTemplates.length)} />
+          <ResultCard label="Workflow blueprints" value={String(generated.platformDefaults.workflowBlueprints.length)} />
+        </div>
+      </section>
+
+      <section className={sectionClassName()}>
         <p className="text-sm font-semibold text-[#087968]">Workflow stages</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {generated.workflowStages.map((stage) => (

@@ -8,13 +8,17 @@ It turns a business blueprint into a generated package containing:
 
 - profile configuration
 - route plan
+- navigation defaults
 - dashboard wording
+- default dashboard cards
 - voice profile
 - AI prompt
 - notification templates
+- workflow blueprints
 - workflow definitions
 - documentation
 - smoke tests
+- sample automation rules
 
 ## What the wizard asks for
 
@@ -37,6 +41,9 @@ It turns a business blueprint into a generated package containing:
 - CRM fields
 - Workflow stages
 - Follow-up cadence
+- Navigation labels
+- Default workflow stages
+- Sample automation rules
 
 ## Output format
 
@@ -60,3 +67,4 @@ The shared platform remains stable while each new vertical is described through 
 - ClinicFlow stays the first live profile.
 - PlumbFlow, BuildFlow, EstateFlow, SparkFlow, and future profiles can follow the same pattern.
 - The factory output is safe to reuse because it does not touch the live clinic runtime until the profile is registered.
+- Generated packages now also include default workflows, notification templates, navigation, voice profile data, prompt profile data, dashboard cards, and sample automation rules.

@@ -50,8 +50,8 @@ export default async function FactoryPage() {
           <p className="text-sm font-semibold text-[#087968]">What the factory produces</p>
           <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#5d6d68]">
             <li className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">A new profile manifest for the chosen industry and business.</li>
-            <li className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">Route suggestions, dashboard labels, voice guidance, and AI prompt copy.</li>
-            <li className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">Documentation and smoke tests ready for a new vertical.</li>
+            <li className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">Route suggestions, navigation defaults, dashboard labels, voice guidance, and AI prompt copy.</li>
+            <li className="rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] p-4">Default workflows, notification templates, documentation, and smoke tests ready for a new vertical.</li>
           </ul>
         </article>
       </section>

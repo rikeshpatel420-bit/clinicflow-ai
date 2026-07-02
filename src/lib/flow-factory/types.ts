@@ -66,6 +66,52 @@ export type FlowFactoryRoutePlan = {
   label: string;
 };
 
+export type FlowFactoryDashboardCard = {
+  description: string;
+  id: string;
+  label: string;
+};
+
+export type FlowFactoryWorkflowBlueprint = {
+  channel: "email" | "sms" | "voice" | "workflow";
+  description: string;
+  key: string;
+  label: string;
+  trigger: string;
+};
+
+export type FlowFactoryNotificationTemplate = {
+  body: string;
+  channel: "dashboard" | "email" | "internal" | "push" | "sms" | "whatsapp";
+  id: string;
+  label: string;
+  subject?: string;
+};
+
+export type FlowFactoryPromptProfile = {
+  aiPrompt: string;
+  greeting: string;
+  language: string;
+  tone: string;
+  voicePersonality: string;
+};
+
+export type FlowFactoryPlatformDefaults = {
+  branding: FlowFactoryColourPalette;
+  dashboardCards: FlowFactoryDashboardCard[];
+  navigation: FlowFactoryRoutePlan[];
+  notificationTemplates: FlowFactoryNotificationTemplate[];
+  promptProfile: FlowFactoryPromptProfile;
+  sampleAutomationRules: string[];
+  voiceProfile: {
+    language: string;
+    rate: string;
+    ssmlEnabled: boolean;
+    voice: string;
+  };
+  workflowBlueprints: FlowFactoryWorkflowBlueprint[];
+};
+
 export type FlowFactoryGeneratedProfile = {
   blueprint: FlowFactoryBlueprint;
   dashboard: {
@@ -87,6 +133,7 @@ export type FlowFactoryGeneratedProfile = {
     workflowCount: number;
   };
   profileId: string;
+  platformDefaults: FlowFactoryPlatformDefaults;
   routes: FlowFactoryRoutePlan[];
   tests: string;
   voice: {

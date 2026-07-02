@@ -7,8 +7,10 @@
 - ClinicFlow profile cleaned into profile data
 - PlumbFlow profile added as the second vertical
 - SparkFlow and HeatFlow profile skeletons added
+- BuildFlow and EstateFlow profile skeletons added
 - `/platform` now shows the active profile plus the profile catalog
 - Profile detail pages added under `/platform/profiles/[profileId]`
+- Shared profile builder added for common contact entities and templates
 - Shared conversation labels made more profile-driven
 - Neutral `caseSummary` template added for broader vertical support
 - Architecture docs updated
@@ -21,6 +23,8 @@
 - Local smoke checks for:
   - `/`
   - `/platform`
+  - `/platform/profiles/buildflow`
+  - `/platform/profiles/estateflow`
   - `/platform/profiles/plumbflow`
   - `/platform/profiles/sparkflow`
   - `/platform/profiles/heatflow`

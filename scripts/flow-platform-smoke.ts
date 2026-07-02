@@ -1,6 +1,6 @@
 import { getActiveFlowPlatformProfile, getActiveFlowPlatformProfileId, getFlowPlatformProfileSummaries } from "../src/lib/flow-platform";
 
-const expectedProfileIds = ["clinicflow", "plumbflow", "sparkflow", "heatflow"] as const;
+const expectedProfileIds = ["buildflow", "clinicflow", "estateflow", "plumbflow", "sparkflow", "heatflow"] as const;
 
 const summaries = getFlowPlatformProfileSummaries();
 const summaryIds = summaries.map((summary) => summary.id).sort();

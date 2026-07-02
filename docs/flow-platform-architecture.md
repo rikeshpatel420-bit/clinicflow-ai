@@ -8,6 +8,7 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Shared conversation engine
    - Shared workflow primitives
    - Shared template helpers
+   - Shared profile builder and contact entity presets
    - Shared registry and profile loading
 
 2. Industry configuration
@@ -59,12 +60,15 @@ src/lib/flow-platform/
   core.ts
   factory.ts
   index.ts
+  profile-builder.ts
   registry.ts
   runtime.ts
   catalog.ts
   types.ts
   profiles/
+    buildflow.ts
     clinicflow.ts
+    estateflow.ts
     heatflow.ts
     plumbflow.ts
     sparkflow.ts
@@ -81,11 +85,12 @@ src/lib/flow-platform/
    - entity rules
    - templates
    - workflows
-3. Wrap the exported profile with `defineFlowPlatformProfile()` to keep the shape consistent
-4. Register the profile in `src/lib/flow-platform/registry.ts`
-5. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
-6. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
-7. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
+3. Wrap the exported profile with `createFlowPlatformProfile()` or `defineFlowPlatformProfile()` to keep the shape consistent
+4. Reuse the shared helpers in `src/lib/flow-platform/profile-builder.ts` for contact entities, summary templates, message templates, knowledge base, and workflow sets
+5. Register the profile in `src/lib/flow-platform/registry.ts`
+6. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
+7. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
+8. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
 
 ## How to add intents
 
@@ -138,6 +143,8 @@ That means future products can reuse the same engine and only swap the profile.
 PlumbFlow now proves that another vertical can live alongside ClinicFlow without changing the core platform.
 
 SparkFlow and HeatFlow now act as additional vertical skeletons so new products can be added without touching the conversation engine.
+
+BuildFlow and EstateFlow now show the same pattern in construction and property, using the shared profile builder instead of copy-pasted setup code.
 
 ## Active profile selection
 

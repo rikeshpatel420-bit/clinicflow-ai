@@ -21,4 +21,4 @@ Directional roadmap for future Flow verticals.
 - Add a new folder for each product profile.
 - Reuse the shared conversation engine, workflow engine, and Twilio runtime.
 - Avoid product-specific code in the core platform.
-
+- BuildFlow and EstateFlow now exist as reusable vertical skeletons that demonstrate the profile-builder pattern.

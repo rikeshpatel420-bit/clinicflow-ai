@@ -138,8 +138,16 @@ export default async function PlatformProfilePage(props: { params: Promise<{ pro
               <ul className="mt-2 grid gap-2 text-sm text-[#5b6662]">
                 {profile.workflows.map((workflow) => (
                   <li key={workflow.key} className="rounded-md border border-[#edf2f0] bg-[#fafcfb] px-3 py-2">
-                    <span className="font-semibold text-[#10201d]">{workflow.label}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-[#10201d]">{workflow.label}</span>
+                      <span className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#65736f]">
+                        {workflow.status ?? "draft"}
+                      </span>
+                    </div>
                     <p className="mt-1 text-xs leading-5">{workflow.trigger}</p>
+                    <p className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#8d9794]">
+                      {workflow.conditions?.length ?? 0} conditions · {workflow.steps?.length ?? 0} steps · {workflow.actions?.length ?? 0} actions
+                    </p>
                   </li>
                 ))}
               </ul>

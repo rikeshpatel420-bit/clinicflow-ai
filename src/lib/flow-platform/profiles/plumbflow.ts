@@ -602,11 +602,11 @@ export const plumbFlowPlatformProfile = defineFlowPlatformProfile({
     { channel: "email", key: "safety-escalation", template: "Email the team when a gas safety or emergency repair issue is captured.", trigger: "lead.escalated" },
   ],
   workflows: [
-    { channel: "voice", description: "Answer the call with a warm plumbing receptionist greeting.", handler: "handlePlumbFlowVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", trigger: "twilio.voice.received" },
-    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handlePlumbFlowVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", trigger: "twilio.voice.speech" },
-    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendPlumbFlowRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", trigger: "call.missed" },
-    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processPlumbFlowCallWebhook", key: "persist-call", label: "Persist call", trigger: "twilio.call.received" },
-    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generatePlumbFlowCallSummary", key: "generate-call-summary", label: "Generate summary", trigger: "call.summary.requested" },
+    { channel: "voice", description: "Answer the call with a warm plumbing receptionist greeting.", handler: "handlePlumbFlowVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", profileId: "plumbflow", status: "active", trigger: "inbound_call_completed" },
+    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handlePlumbFlowVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", profileId: "plumbflow", status: "active", trigger: "message_received" },
+    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendPlumbFlowRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", profileId: "plumbflow", status: "active", trigger: "missed_call" },
+    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processPlumbFlowCallWebhook", key: "persist-call", label: "Persist call", profileId: "plumbflow", status: "active", trigger: "new_lead_created" },
+    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generatePlumbFlowCallSummary", key: "generate-call-summary", label: "Generate summary", profileId: "plumbflow", status: "active", trigger: "follow_up_due" },
   ],
 } satisfies FlowPlatformProfile<PlumbFlowVoiceIntent, PlumbFlowVoiceEntity, PlumbFlowActionIntent, PlumbFlowLeadIntent, PlumbFlowLeadEntity>);
 

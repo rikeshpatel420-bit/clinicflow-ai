@@ -7,6 +7,7 @@
     "build": "next build",
     "flow-platform:smoke": "npx tsx scripts/flow-platform-smoke.ts",
     "flow-factory:smoke": "npx tsx scripts/flow-factory-smoke.ts",
+    "flow-workflow:smoke": "npx tsx scripts/flow-workflow-smoke.ts",
     "start": "next start",
     "lint": "eslint"
   },

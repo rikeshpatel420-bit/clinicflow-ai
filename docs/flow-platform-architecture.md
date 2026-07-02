@@ -46,6 +46,10 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
 
 7. Actions
    - Workflow definitions
+   - Trigger registry
+   - Condition builder
+   - Action catalog
+   - Workflow executor
    - Notification rules
    - Recovery rules
 
@@ -71,6 +75,7 @@ src/lib/flow-platform/
   registry.ts
   runtime.ts
   catalog.ts
+  workflow-engine.ts
   types.ts
   profiles/
     buildflow.ts
@@ -96,8 +101,11 @@ src/lib/flow-factory/
    - entity rules
    - templates
    - workflows
+   - workflow triggers
+   - workflow actions
+   - workflow fallback rules
 3. Wrap the exported profile with `createFlowPlatformProfile()` or `defineFlowPlatformProfile()` to keep the shape consistent
-4. Reuse the shared helpers in `src/lib/flow-platform/profile-builder.ts` for contact entities, summary templates, message templates, knowledge base, and workflow sets
+4. Reuse the shared helpers in `src/lib/flow-platform/profile-builder.ts` for contact entities, summary templates, message templates, knowledge base, and workflow definitions
 5. Register the profile in `src/lib/flow-platform/registry.ts`
 6. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
 7. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
@@ -136,9 +144,24 @@ src/lib/flow-factory/
 ## How to create workflows
 
 1. Define the workflow key and trigger
-2. Assign the handler name
-3. Declare the communication channel
+2. Declare the communication channel
+3. Add conditions, actions, and fallback behaviour
 4. Keep the runtime generic so the profile selects behaviour
+5. Use the workflow executor to evaluate the trigger, conditions, steps, and audit trail
+
+## Workflow engine model
+
+The reusable workflow engine treats each workflow as configuration:
+
+- `trigger` decides when the workflow can run
+- `conditions` decide whether it is relevant for the current event
+- `steps` group the actions into safe execution chunks
+- `actions` describe what should happen
+- `fallback` defines the safe recovery path
+- `status` controls whether the workflow is active
+- `auditTrail` describes what should be recorded
+
+This means a vertical can define reception, escalation, follow-up, and recovery behaviour without adding bespoke product logic to the core platform.
 
 ## ClinicFlow today
 
@@ -159,6 +182,7 @@ SparkFlow and HeatFlow now act as additional vertical skeletons so new products 
 BuildFlow and EstateFlow now show the same pattern in construction and property, using the shared profile builder instead of copy-pasted setup code.
 
 Flow Factory adds a configuration layer on top of the profile registry so new verticals can be described once and packaged without touching the platform core.
+The workflow engine sits underneath those profiles so every product can describe what happens after an enquiry, missed call, booking request, escalation, or follow-up event.
 
 ## Active profile selection
 

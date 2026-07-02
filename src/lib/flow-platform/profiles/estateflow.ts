@@ -484,6 +484,7 @@ export const estateFlowPlatformProfile = createFlowPlatformProfile({
   workflows: createStandardWorkflowSet({
     answerDescription: "Answer the call with a warm property receptionist greeting.",
     answerHandler: "handleEstateFlowVoiceWebhook",
+    profileId: "estateflow",
     persistDescription: "Create or update the lead record and recovery workflow.",
     persistHandler: "processEstateFlowCallWebhook",
     profileName: "EstateFlow Property",

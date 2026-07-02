@@ -435,6 +435,7 @@ export const buildFlowPlatformProfile = createFlowPlatformProfile({
   workflows: createStandardWorkflowSet({
     answerDescription: "Answer the call with a warm construction receptionist greeting.",
     answerHandler: "handleBuildFlowVoiceWebhook",
+    profileId: "buildflow",
     persistDescription: "Create or update the lead record and recovery workflow.",
     persistHandler: "processBuildFlowCallWebhook",
     profileName: "BuildFlow Construction",

@@ -106,13 +106,128 @@ export type FlowKnowledgeBase = {
   safeResponses: string[];
 };
 
+export type FlowWorkflowTrigger =
+  | "inbound_call_completed"
+  | "missed_call"
+  | "emergency_detected"
+  | "new_lead_created"
+  | "appointment_requested"
+  | "message_received"
+  | "quote_requested"
+  | "human_transfer_requested"
+  | "follow_up_due"
+  | "payment_due"
+  | "review_request_due"
+  | "twilio.call.received"
+  | "twilio.voice.received"
+  | "twilio.voice.speech"
+  | "twilio.sms.received"
+  | "twilio.call.missed"
+  | "call.missed"
+  | "call.summary.requested"
+  | "call.summary.created"
+  | (string & {});
+
+export type FlowWorkflowStatus = "active" | "draft" | "paused" | "archived";
+
+export type FlowWorkflowConditionOperator =
+  | "equals"
+  | "not_equals"
+  | "contains"
+  | "not_contains"
+  | "greater_than"
+  | "greater_than_or_equal"
+  | "less_than"
+  | "less_than_or_equal"
+  | "in"
+  | "not_in"
+  | "starts_with"
+  | "ends_with"
+  | "exists"
+  | "missing"
+  | "truthy"
+  | "falsy"
+  | "matches";
+
+export type FlowWorkflowConditionValue = string | number | boolean | readonly (string | number | boolean)[];
+
+export type FlowWorkflowCondition = {
+  field: string;
+  label: string;
+  operator: FlowWorkflowConditionOperator;
+  value?: FlowWorkflowConditionValue;
+  description?: string;
+};
+
+export type FlowWorkflowActionType =
+  | "classify_intent"
+  | "create_lead"
+  | "update_customer"
+  | "create_task"
+  | "send_sms"
+  | "send_email"
+  | "notify_staff"
+  | "schedule_callback"
+  | "escalate"
+  | "add_note"
+  | "assign_owner"
+  | "create_booking_request"
+  | "update_call_summary"
+  | "mark_recovery_status"
+  | "trigger_webhook"
+  | "extract_entities"
+  | "score_urgency"
+  | "update_dashboard"
+  | "handoff_to_human";
+
+export type FlowWorkflowAction = {
+  id: string;
+  type: FlowWorkflowActionType;
+  label: string;
+  description: string;
+  payload?: Record<string, unknown>;
+  enabled?: boolean;
+};
+
+export type FlowWorkflowStep = {
+  actionIds: readonly string[];
+  conditionMode?: "all" | "any";
+  conditions?: readonly FlowWorkflowCondition[];
+  continueOnError?: boolean;
+  description: string;
+  fallbackActionIds?: readonly string[];
+  id: string;
+  label: string;
+};
+
+export type FlowWorkflowFallback = {
+  actionIds: readonly string[];
+  description: string;
+  label: string;
+};
+
+export type FlowWorkflowAuditTrail = {
+  enabled: boolean;
+  entityTable: string;
+  eventTypes: readonly string[];
+  note: string;
+  riskLevel?: "low" | "medium" | "high";
+};
+
 export type FlowWorkflowDefinition = {
   channel: "workflow" | "sms" | "email" | "voice";
+  actions?: readonly FlowWorkflowAction[];
+  auditTrail?: FlowWorkflowAuditTrail;
+  conditions?: readonly FlowWorkflowCondition[];
   description: string;
+  fallback?: FlowWorkflowFallback;
   handler: string;
   key: string;
   label: string;
-  trigger: string;
+  profileId?: string;
+  status?: FlowWorkflowStatus;
+  steps?: readonly FlowWorkflowStep[];
+  trigger: FlowWorkflowTrigger;
 };
 
 export type FlowNotificationRule = {

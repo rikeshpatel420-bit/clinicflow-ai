@@ -549,10 +549,10 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
     { channel: "email", key: "lead-escalation", template: "Email the team when an urgent lead or complaint is captured.", trigger: "lead.escalated" },
   ],
   workflows: [
-    { channel: "voice", description: "Answer the call with a warm receptionist greeting.", handler: "handleTwilioVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", trigger: "twilio.voice.received" },
-    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handleTwilioVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", trigger: "twilio.voice.speech" },
-    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", trigger: "call.missed" },
-    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processTwilioCallWebhook", key: "persist-call", label: "Persist call", trigger: "twilio.call.received" },
-    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generateCallReceptionSummary", key: "generate-call-summary", label: "Generate summary", trigger: "call.summary.requested" },
+    { channel: "voice", description: "Answer the call with a warm receptionist greeting.", handler: "handleTwilioVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", profileId: "clinicflow", status: "active", trigger: "inbound_call_completed" },
+    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handleTwilioVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", profileId: "clinicflow", status: "active", trigger: "message_received" },
+    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", profileId: "clinicflow", status: "active", trigger: "missed_call" },
+    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processTwilioCallWebhook", key: "persist-call", label: "Persist call", profileId: "clinicflow", status: "active", trigger: "new_lead_created" },
+    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generateCallReceptionSummary", key: "generate-call-summary", label: "Generate summary", profileId: "clinicflow", status: "active", trigger: "follow_up_due" },
   ],
 } satisfies FlowPlatformProfile<ClinicFlowVoiceIntent, ClinicFlowVoiceEntity, ClinicFlowTreatmentIntent, ClinicFlowLeadIntent, ClinicFlowLeadEntity>);

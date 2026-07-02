@@ -35,12 +35,14 @@ Each profile should provide:
 - summary templates
 - SMS and email templates
 - dashboard labels and icons
+- workflow triggers, steps, actions, fallback rules, and audit trail settings
 
 ## Good practice
 
 - Keep the core engine generic.
 - Put all domain wording in the profile.
 - Keep workflows declarative.
+- Use triggers, conditions, steps, and actions instead of hard-coding branch logic.
 - Prefer short prompts and concise follow-up questions.
 - Reuse the shared conversation engine instead of creating custom parsers.
 - Add a profile page under `/platform/profiles/[profileId]` if you want a browseable internal preview.

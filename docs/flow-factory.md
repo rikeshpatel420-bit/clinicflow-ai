@@ -12,6 +12,7 @@ It turns a business blueprint into a generated package containing:
 - voice profile
 - AI prompt
 - notification templates
+- workflow definitions
 - documentation
 - smoke tests
 

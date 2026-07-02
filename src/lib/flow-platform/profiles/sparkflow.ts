@@ -421,10 +421,10 @@ export const sparkFlowPlatformProfile = defineFlowPlatformProfile({
     { channel: "email", key: "safety-escalation", template: "Email the team when a safety issue is captured.", trigger: "lead.escalated" },
   ],
   workflows: [
-    { channel: "voice", description: "Answer the call with a warm electrical receptionist greeting.", handler: "handleSparkFlowVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", trigger: "twilio.voice.received" },
-    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handleSparkFlowVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", trigger: "twilio.voice.speech" },
-    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendSparkFlowRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", trigger: "call.missed" },
-    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processSparkFlowCallWebhook", key: "persist-call", label: "Persist call", trigger: "twilio.call.received" },
-    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generateSparkFlowCallSummary", key: "generate-call-summary", label: "Generate summary", trigger: "call.summary.requested" },
+    { channel: "voice", description: "Answer the call with a warm electrical receptionist greeting.", handler: "handleSparkFlowVoiceWebhook", key: "answer-inbound-call", label: "Answer inbound call", profileId: "sparkflow", status: "active", trigger: "inbound_call_completed" },
+    { channel: "workflow", description: "Collect speech input and continue the triage conversation.", handler: "handleSparkFlowVoiceSpeechWebhook", key: "continue-voice-conversation", label: "Continue conversation", profileId: "sparkflow", status: "active", trigger: "message_received" },
+    { channel: "sms", description: "Send a missed-call recovery SMS and keep the recovery workflow moving.", handler: "sendSparkFlowRecoverySms", key: "send-missed-call-recovery", label: "Send recovery SMS", profileId: "sparkflow", status: "active", trigger: "missed_call" },
+    { channel: "workflow", description: "Create or update the lead record and recovery workflow.", handler: "processSparkFlowCallWebhook", key: "persist-call", label: "Persist call", profileId: "sparkflow", status: "active", trigger: "new_lead_created" },
+    { channel: "workflow", description: "Generate the receptionist summary for the dashboard.", handler: "generateSparkFlowCallSummary", key: "generate-call-summary", label: "Generate summary", profileId: "sparkflow", status: "active", trigger: "follow_up_due" },
   ],
 } as const);

@@ -83,21 +83,24 @@ export default async function PlatformPage() {
           <p className="mt-3 text-sm leading-6 text-[#5b6662]">
             The runtime resolves the active product profile from <code className="font-semibold text-[#10201d]">FLOW_PLATFORM_PROFILE_ID</code> and falls back to ClinicFlow.
           </p>
-          <div className="mt-4 rounded-lg border border-[#edf2f0] bg-[#fafcfb] p-4">
-            <p className="text-sm font-semibold text-[#10201d]">Need a new product?</p>
-            <p className="mt-1 text-sm leading-6 text-[#5b6662]">
-              Use Flow Factory to generate a new configuration package, route plan, voice profile, documentation, and smoke tests without
-              touching the shared platform code.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-3">
-              <Link href="/factory" className="inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a2f2b]">
-                Open Flow Factory
-              </Link>
-              <Link href="/platform/profiles" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
-                Compare profiles
-              </Link>
+            <div className="mt-4 rounded-lg border border-[#edf2f0] bg-[#fafcfb] p-4">
+              <p className="text-sm font-semibold text-[#10201d]">Need a new product?</p>
+              <p className="mt-1 text-sm leading-6 text-[#5b6662]">
+                Use Flow Factory to generate a new configuration package, route plan, voice profile, documentation, and smoke tests without
+                touching the shared platform code.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <Link href="/factory" className="inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a2f2b]">
+                  Open Flow Factory
+                </Link>
+                <Link href="/platform/foundation" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
+                  SaaS foundation
+                </Link>
+                <Link href="/platform/profiles" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
+                  Compare profiles
+                </Link>
+              </div>
             </div>
-          </div>
         </article>
         <article className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">
           <p className="text-sm font-semibold text-[#087968]">Platform health</p>

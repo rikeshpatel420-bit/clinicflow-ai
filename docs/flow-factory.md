@@ -53,6 +53,8 @@ The wizard generates a package preview that can be saved into a new profile fold
 
 The shared platform remains stable while each new vertical is described through configuration instead of bespoke product code.
 
+The generated package now sits beside the shared SaaS foundation, which means tenancy, billing, feature flags, permissions, audit logging, and isolation stay reusable while the profile changes independently.
+
 ## Usage pattern
 
 1. Open `/factory`
@@ -61,6 +63,7 @@ The shared platform remains stable while each new vertical is described through 
 4. Save the resulting profile into a new product folder
 5. Register the profile in the Flow Platform registry
 6. Switch `FLOW_PLATFORM_PROFILE_ID` when you want the runtime to use it
+7. Open `/platform/foundation` to review the shared platform capabilities every generated product inherits
 
 ## Notes
 

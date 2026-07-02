@@ -18,6 +18,7 @@ export const platformConfig = {
   },
   modules: [
     { id: "core-auth", name: "Tenant auth shell", area: "core", status: "active", description: "Clinic-scoped account and role foundation." },
+    { id: "saas-foundation", name: "SaaS foundation", area: "enterprise", status: "active", description: "Reusable tenancy, billing, permissions, feature flags, API keys, and audit primitives." },
     { id: "events", name: "Internal event bus", area: "core", status: "beta", description: "Audit-safe event structure for workflows and notifications." },
     { id: "notifications", name: "Notification engine", area: "core", status: "active", description: "Profile-aware SMS, email, and internal notification dispatch." },
     { id: "audit", name: "Audit engine", area: "core", status: "active", description: "Reusable audit records for workflows, AI, escalation, and notifications." },

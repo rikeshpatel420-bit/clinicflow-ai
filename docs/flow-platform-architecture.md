@@ -91,6 +91,15 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Navigation and dashboard defaults
    - Validator-ready profile summaries
 
+12. SaaS foundation
+   - Tenant isolation helpers
+   - Roles and permissions matrix
+   - Billing abstractions and usage limits
+   - Feature flags and rollout controls
+   - API key policy and secret visibility rules
+   - Audit and production-readiness snapshot
+   - Internal `/platform/foundation` view
+
 ## Folder structure
 
 ```text

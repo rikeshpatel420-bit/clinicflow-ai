@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 const nav = [
   { href: "/platform", label: "Platform" },
+  { href: "/platform/foundation", label: "Foundation" },
   { href: "/platform/profiles", label: "Profiles" },
   { href: "/platform/workflows", label: "Workflows" },
   { href: "/factory", label: "Factory" },

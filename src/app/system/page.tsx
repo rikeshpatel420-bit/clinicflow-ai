@@ -261,6 +261,9 @@ export default async function SystemPage() {
               <p className="mt-1 text-sm text-[#5d6d68]">{new Date(report.lastCheckedAt).toLocaleString("en-GB")}</p>
             </div>
             <div className="flex flex-wrap gap-3 text-sm font-semibold">
+              <Link href="/platform/foundation" className="rounded-full border border-[#dbe6e2] bg-white px-4 py-2.5 text-[#10201d] hover:border-[#c8eee6] hover:bg-[#f7fffd]">
+                Open foundation
+              </Link>
               <Link href="/integrations/twilio" className="rounded-full border border-[#dbe6e2] bg-white px-4 py-2.5 text-[#10201d] hover:border-[#c8eee6] hover:bg-[#f7fffd]">
                 Open Twilio setup
               </Link>

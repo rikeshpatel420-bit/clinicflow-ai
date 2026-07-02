@@ -19,6 +19,7 @@ Flow Platform is profile-driven. To add a new product, create a configuration fo
 5. Export the profile from `src/lib/flow-platform/registry.ts`
 6. Add the profile to the `/platform` catalog if you want it visible in the UI
 7. Set `FLOW_PLATFORM_PROFILE_ID=<profile-id>` when you want the runtime to use it
+8. Use `/factory` if you want the same blueprint captured as a generated configuration package, route plan, docs bundle, and smoke test
 
 ## Profile checklist
 
@@ -44,3 +45,4 @@ Each profile should provide:
 - Reuse the shared conversation engine instead of creating custom parsers.
 - Add a profile page under `/platform/profiles/[profileId]` if you want a browseable internal preview.
 - Reuse the standard contact entity helpers before adding one-off entity patterns.
+- Keep the Flow Factory output as the source of truth for the new product blueprint so future profiles stay config-driven.

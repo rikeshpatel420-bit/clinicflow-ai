@@ -60,6 +60,16 @@ export default async function PlatformPage() {
           <p className="mt-3 text-sm leading-6 text-[#5b6662]">
             The runtime resolves the active product profile from <code className="font-semibold text-[#10201d]">FLOW_PLATFORM_PROFILE_ID</code> and falls back to ClinicFlow.
           </p>
+          <div className="mt-4 rounded-lg border border-[#edf2f0] bg-[#fafcfb] p-4">
+            <p className="text-sm font-semibold text-[#10201d]">Need a new product?</p>
+            <p className="mt-1 text-sm leading-6 text-[#5b6662]">
+              Use Flow Factory to generate a new configuration package, route plan, voice profile, documentation, and smoke tests without
+              touching the shared platform code.
+            </p>
+            <Link href="/factory" className="mt-3 inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a2f2b]">
+              Open Flow Factory
+            </Link>
+          </div>
         </article>
       </section>
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr_0.9fr]">

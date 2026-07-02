@@ -10,6 +10,7 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Shared template helpers
    - Shared profile builder and contact entity presets
    - Shared registry and profile loading
+   - Shared Flow Factory generator and wizard helpers
 
 2. Industry configuration
    - Domain terminology
@@ -53,6 +54,12 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Icons
    - Labels
 
+9. Flow Factory
+   - Blueprint capture wizard
+   - Generated route plans
+   - Generated documentation
+   - Generated smoke tests
+
 ## Folder structure
 
 ```text
@@ -72,6 +79,10 @@ src/lib/flow-platform/
     heatflow.ts
     plumbflow.ts
     sparkflow.ts
+src/lib/flow-factory/
+  generator.ts
+  index.ts
+  types.ts
 ```
 
 ## How to add a new Flow product
@@ -91,6 +102,7 @@ src/lib/flow-platform/
 6. Add or update the profile catalog view in `/platform` if you want to expose it in the UI
 7. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
 8. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
+9. Use Flow Factory to generate the new product package, documentation, and smoke tests from a configuration wizard
 
 ## How to add intents
 
@@ -145,6 +157,8 @@ PlumbFlow now proves that another vertical can live alongside ClinicFlow without
 SparkFlow and HeatFlow now act as additional vertical skeletons so new products can be added without touching the conversation engine.
 
 BuildFlow and EstateFlow now show the same pattern in construction and property, using the shared profile builder instead of copy-pasted setup code.
+
+Flow Factory adds a configuration layer on top of the profile registry so new verticals can be described once and packaged without touching the platform core.
 
 ## Active profile selection
 

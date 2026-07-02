@@ -17,10 +17,13 @@ const publicNav: NavItem[] = [
 const appNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/ai", label: "AI Console" },
+  { href: "/knowledge", label: "Knowledge" },
+  { href: "/workflows", label: "Workflows" },
   { href: "/patients", label: "Patients" },
   { href: "/calls", label: "Calls" },
   { href: "/inbox", label: "Inbox" },
   { href: "/integrations/twilio", label: "Integrations" },
+  { href: "/settings", label: "Settings" },
   { href: "/onboarding", label: "Onboarding" },
   { href: "/factory", label: "Factory" },
   { href: "/saas", label: "SaaS" },

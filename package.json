@@ -10,6 +10,7 @@
     "flow-products:smoke": "npx tsx scripts/flow-products-smoke.ts",
     "flow-workflow:smoke": "npx tsx scripts/flow-workflow-smoke.ts",
     "saas:smoke": "npx tsx scripts/saas-smoke.ts",
+    "customer:smoke": "npx tsx scripts/customer-experience-smoke.ts",
     "start": "next start",
     "lint": "eslint"
   },
@@ -29,6 +30,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
+    "tsx": "^4.22.5",
     "typescript": "^5"
   }
 }

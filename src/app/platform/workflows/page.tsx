@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PlatformShell } from "@/components/platform/platform-shell";
+import { WorkflowPlayground } from "@/components/workflows/workflow-playground";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getActiveFlowPlatformProfile, getFlowPlatformProfileSummaries, getWorkflowOverviews } from "@/lib/flow-platform";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -110,6 +111,8 @@ export default async function PlatformWorkflowsPage() {
           </div>
         </article>
       </section>
+
+      <WorkflowPlayground />
 
       <section className="grid gap-6 xl:grid-cols-3">
         {workflowOverviews.map((workflow) => (

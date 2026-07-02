@@ -18,10 +18,10 @@ export function DashboardHeader({
         <div>
           <p className="text-sm font-medium text-teal-700 dark:text-teal-300">{clinic.name}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-            Clinic command centre
+            Business dashboard
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Live Supabase dashboard scoped to tenant, lead, call, SMS, workflow, and metric models.
+            Live clinic dashboard scoped to calls, bookings, revenue, follow-ups, and go-live readiness.
           </p>
           {demoStatus ? (
             <p className="mt-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">

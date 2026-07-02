@@ -4,7 +4,9 @@ import { ActivityList } from "@/components/settings/activity-list";
 import { OnboardingProgress } from "@/components/settings/onboarding-progress";
 import { SettingsCard } from "@/components/settings/settings-card";
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { billingDemo } from "@/lib/billing/data";
 import { enterpriseSettingsDemo } from "@/lib/settings/data";
+import { providerRegistry } from "@/lib/integrations/registry";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 
@@ -16,7 +18,11 @@ const sections = [
   { href: "#voice", label: "Voice" },
   { href: "#sms", label: "SMS" },
   { href: "#hours", label: "Hours" },
+  { href: "#business", label: "Business" },
+  { href: "#integrations", label: "Integrations" },
+  { href: "#billing", label: "Billing" },
   { href: "#team", label: "Team" },
+  { href: "#roles", label: "Roles" },
   { href: "#security", label: "Security" },
   { href: "#branding", label: "Branding" },
   { href: "#audit", label: "Audit logs" },
@@ -26,6 +32,8 @@ export default async function SettingsPage() {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
   if (isSupabaseConfigured && !user) redirect("/login");
+  const launchScore = enterpriseSettingsDemo.clinic.completion;
+  const activeIntegrations = providerRegistry.filter((provider) => ["twilio", "google_calendar", "stripe", "email", "webhooks"].includes(provider.key));
 
   return (
     <SettingsShell
@@ -34,12 +42,93 @@ export default async function SettingsPage() {
       title="Clinic operating system setup"
       description="A premium command center for Twilio, AI, voice, SMS, business hours, emergency routing, users, branding, and audit visibility."
     >
+      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <SettingsCard eyebrow="Launch readiness" title="Configure the business once, then go live with confidence." description="Use this control panel to finish the setup that a real owner cares about.">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              ["Go-live score", `${launchScore}%`],
+              ["Branches", String(enterpriseSettingsDemo.clinic.locations.length)],
+              ["Team members", String(enterpriseSettingsDemo.team.length)],
+              ["Billing status", billingDemo.subscription.status],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#65736f]">{label}</p>
+                <p className="mt-2 text-lg font-semibold text-[#10201d]">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/onboarding" className="rounded-full bg-[#087968] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(8,121,104,0.22)] hover:bg-[#066657]">
+              Continue onboarding
+            </Link>
+            <Link href="/system" className="rounded-full border border-[#cdd8d5] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] shadow-sm hover:border-[#9db2ad]">
+              Review readiness
+            </Link>
+          </div>
+        </SettingsCard>
+
+        <SettingsCard eyebrow="Business" title="Core company details" description="The first customer should be able to set identity, branches, and contact details without touching code.">
+          <div className="grid gap-3">
+            {[
+              ["Business", enterpriseSettingsDemo.clinic.name],
+              ["Primary phone", enterpriseSettingsDemo.clinic.phone],
+              ["Timezone", enterpriseSettingsDemo.clinic.timezone],
+              ["Active branch", enterpriseSettingsDemo.clinic.activeClinic],
+              ["Website", "clinicflow-demo.co.uk"],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-4 rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] px-4 py-3">
+                <span className="font-medium text-[#52615d]">{label}</span>
+                <span className="font-semibold text-[#10201d]">{value}</span>
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
+      </section>
+
       <section className="flex flex-wrap gap-2">
         {sections.map((section) => (
           <Link key={section.href} href={section.href} className="rounded-full border border-[#dbe6e2] bg-white px-4 py-2 text-sm font-semibold text-[#10201d] shadow-sm hover:border-[#c8eee6] hover:bg-[#f8fffd]">
             {section.label}
           </Link>
         ))}
+      </section>
+
+      <section id="integrations" className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <SettingsCard eyebrow="Integrations" title="Connected platform services" description="Show the owner which services are ready, which are placeholders, and which are waiting for credentials.">
+          <div className="grid gap-3">
+            {activeIntegrations.map((provider) => (
+              <div key={provider.key} className="rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-[#10201d]">{provider.name}</p>
+                    <p className="mt-1 text-sm text-[#65736f]">{provider.category}</p>
+                  </div>
+                  <span className="rounded-full border border-[#c8eee6] bg-[#f7fffd] px-3 py-1 text-xs font-semibold text-[#087968]">Ready</span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#65736f]">{provider.description}</p>
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
+
+        <SettingsCard eyebrow="Billing" title="Stripe-ready billing foundation" description="Plans, invoices, usage, and entitlements are visible before live payments are switched on.">
+          <div className="grid gap-3">
+            {billingDemo.plans.map((plan) => (
+              <div key={plan.key} className="rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-[#10201d]">{plan.name}</p>
+                    <p className="mt-1 text-sm text-[#65736f]">{plan.displayPrice}</p>
+                  </div>
+                  <span className="rounded-full border border-[#c8eee6] bg-[#f7fffd] px-3 py-1 text-xs font-semibold text-[#087968]">
+                    {plan.key === billingDemo.subscription.planKey ? "Current" : "Available"}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-[#65736f]">{plan.features.slice(0, 3).join(" · ")}</p>
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
       </section>
 
       <section id="twilio" className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
@@ -200,6 +289,44 @@ export default async function SettingsPage() {
 
         <SettingsCard eyebrow="Onboarding" title="Setup progress" description="A clinic should know exactly how far through setup it is before going live.">
           <OnboardingProgress steps={enterpriseSettingsDemo.onboarding} />
+        </SettingsCard>
+      </section>
+
+      <section id="roles" className="grid gap-6 lg:grid-cols-2">
+        <SettingsCard eyebrow="Roles" title="Permission matrix" description="Owners and admins should see exactly who can do what before live traffic starts.">
+          <div className="grid gap-3">
+            {enterpriseSettingsDemo.permissionMatrix.map((row) => (
+              <div key={row.role} className="rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-semibold text-[#10201d]">{row.role}</p>
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#65736f]">{row.permissions.length} permissions</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {row.permissions.slice(0, 6).map((permission) => (
+                    <span key={permission.key} className="rounded-full border border-[#dbe6e2] bg-white px-3 py-1 text-xs font-semibold text-[#52615d]">
+                      {permission.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SettingsCard>
+
+        <SettingsCard eyebrow="Business hours" title="Operating windows" description="Set the rules that drive callbacks, emergency routing, and after-hours behaviour.">
+          <div className="grid gap-3">
+            {[
+              ["Weekdays", "08:00 - 18:30"],
+              ["Saturday", "09:00 - 13:00"],
+              ["Sunday", "Closed"],
+              ["Emergency", "Escalate at any time"],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-4 rounded-[18px] border border-[#edf2f0] bg-[#fbfdfc] px-4 py-3">
+                <span className="font-medium text-[#52615d]">{label}</span>
+                <span className="font-semibold text-[#10201d]">{value}</span>
+              </div>
+            ))}
+          </div>
         </SettingsCard>
       </section>
 

@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/navigation/site-header";
+import { AiPlayground } from "@/components/ai/ai-playground";
 import { TwilioStatusStrip } from "@/components/dashboard/twilio-status-strip";
 import { ReceptionLiveBoard } from "@/components/reception/reception-live-board";
 import { ReceptionSummaryForm } from "@/components/reception/reception-summary-form";
@@ -72,6 +73,8 @@ export default async function AiCommandPage({
         {twilioHealth ? <TwilioStatusStrip health={twilioHealth} /> : null}
 
         <ReceptionLiveBoard initialData={data} />
+
+        <AiPlayground />
 
         <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <ReceptionSummaryForm draft={data.summary} />

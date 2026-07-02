@@ -58,6 +58,15 @@ type LiveMetricTotals = {
 
 export type ClinicDashboardData = {
   activity: WorkflowActivityItem[];
+  businessSummary: {
+    aiHandledPercent: number;
+    bookings: number;
+    callsToday: number;
+    missedCalls: number;
+    outstandingTasks: number;
+    revenueEstimatePence: number;
+    unreadEnquiries: number;
+  };
   clinic: DashboardClinicContext | null;
   error: string | null;
   leadColumns: LeadPipelineColumn[];
@@ -148,6 +157,17 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
   ];
 }
 
+function isToday(value: string) {
+  const today = new Date();
+  const date = new Date(value);
+
+  return (
+    today.getUTCFullYear() === date.getUTCFullYear() &&
+    today.getUTCMonth() === date.getUTCMonth() &&
+    today.getUTCDate() === date.getUTCDate()
+  );
+}
+
 function buildMissedCallRows(calls: Call[], workflows: RecoveryWorkflow[], smsEvents: SmsEvent[]): MissedCallRow[] {
   return calls.filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).map((call) => {
     const workflow = workflows.find((item) => item.call_id === call.id);
@@ -206,6 +226,15 @@ function buildActivity(workflows: RecoveryWorkflow[]): WorkflowActivityItem[] {
 function emptyDashboard(error: string | null = null): ClinicDashboardData {
   return {
     activity: [],
+    businessSummary: {
+      aiHandledPercent: 0,
+      bookings: 0,
+      callsToday: 0,
+      missedCalls: 0,
+      outstandingTasks: 0,
+      revenueEstimatePence: 0,
+      unreadEnquiries: 0,
+    },
     clinic: null,
     error,
     leadColumns: buildLeadColumns([]),
@@ -314,9 +343,24 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .filter((lead) => lead.status === "booked" || lead.status === "won")
       .reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0),
   };
+  const callsToday = (calls ?? []).filter((call) => isToday(call.started_at)).length;
+  const unreadEnquiries = (leads ?? []).filter((lead) => lead.status === "new" || lead.status === "contacted").length;
+  const outstandingTasks = (workflows ?? []).filter((workflow) =>
+    ["queued", "waiting", "message_queued", "awaiting_patient_reply"].includes(workflow.state),
+  ).length;
+  const aiHandledPercent = totalCalls > 0 ? Math.round(((totalCalls - missedCalls) / totalCalls) * 100) : 0;
 
   return {
     activity: buildActivity(workflows ?? []),
+    businessSummary: {
+      aiHandledPercent,
+      bookings: liveTotals.bookedLeads,
+      callsToday,
+      missedCalls,
+      outstandingTasks,
+      revenueEstimatePence: liveTotals.revenueRecoveredPence || (leads ?? []).reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0),
+      unreadEnquiries,
+    },
     clinic: clinic ?? null,
     error: loadError ? "Some dashboard data could not be loaded." : null,
     leadColumns: buildLeadColumns(leads ?? []),

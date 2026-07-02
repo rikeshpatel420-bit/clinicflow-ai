@@ -1,4 +1,7 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { headers } from "next/headers";
+import { BusinessHealthPanel } from "@/components/dashboard/business-health-panel";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DemoKpiBand } from "@/components/dashboard/demo-kpi-band";
 import { DashboardMetricCardView } from "@/components/dashboard/metric-card";
@@ -12,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SiteHeader } from "@/components/navigation/site-header";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { getClinicDashboardData } from "@/lib/dashboard/live-data";
+import { buildProductionReadinessReport } from "@/lib/system/readiness";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getTwilioSetupHealthForClinic, type TwilioSetupHealth } from "@/lib/twilio/health";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -34,6 +38,11 @@ export default async function DashboardPage({
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
   const params = await searchParams;
+  const requestHeaders = await headers();
+  const forwardedHost = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const forwardedProto =
+    requestHeaders.get("x-forwarded-proto") ?? (forwardedHost && /localhost|127\.0\.0\.1/.test(forwardedHost) ? "http" : "https");
+  const baseUrl = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null;
   let membershipRole: string | null = null;
   let membershipClinicId: string | null = null;
   let twilioHealth: TwilioSetupHealth | null = null;
@@ -53,9 +62,14 @@ export default async function DashboardPage({
   }
 
   const dashboard = await getClinicDashboardData(user);
+  const readinessReport = await buildProductionReadinessReport({ baseUrl, user });
   if (membershipClinicId) {
     twilioHealth = await getTwilioSetupHealthForClinic(membershipClinicId);
   }
+  const readinessScore = Math.round((readinessReport.steps.filter((step) => step.status === "complete").length / readinessReport.steps.length) * 100);
+  const readinessLabel =
+    readinessScore >= 85 ? "Ready for live traffic" : readinessScore >= 65 ? "Nearly ready" : readinessScore >= 40 ? "Needs a few steps" : "Needs setup";
+  const missingSteps = readinessReport.steps.filter((step) => step.status !== "complete").map((step) => `${step.label}: ${step.detail}`);
   const demoKpiBand = dashboard.snapshot
     ? {
         appointmentsBooked: dashboard.snapshot.booked_leads,
@@ -105,6 +119,13 @@ export default async function DashboardPage({
                 <EmptyState title="Dashboard data unavailable" message={dashboard.error} actionHref="/onboarding" actionLabel="Open onboarding" />
               ) : null}
 
+              <BusinessHealthPanel
+                missingSteps={missingSteps}
+                readinessLabel={readinessLabel}
+                readinessScore={readinessScore}
+                summary={dashboard.businessSummary}
+              />
+
               <DemoKpiBand
                 appointmentsBooked={demoKpiBand.appointmentsBooked}
                 description={demoKpiBand.description}
@@ -128,13 +149,21 @@ export default async function DashboardPage({
             <aside className="grid content-start gap-6">
               <WorkflowActivityFeed items={dashboard.activity} />
 
-              <section className="rounded-lg bg-slate-950 p-5 text-white shadow-sm dark:bg-white dark:text-slate-950">
+              <section className="rounded-[28px] border border-[#dbe6e2] bg-[#10201d] p-5 text-white shadow-[0_24px_100px_rgba(16,33,29,0.14)]">
                 <p className="text-sm font-semibold text-teal-300 dark:text-teal-700">Auth boundary</p>
                 <h2 className="mt-3 text-2xl font-semibold tracking-tight">Ready for clinic-scoped data</h2>
                 <p className="mt-3 text-sm leading-6 text-white/70 dark:text-slate-600">
                   This route requires an authenticated user when Supabase is configured. Provider events stay read-only here and should
                   enter the system through RLS-backed server actions or signed webhooks.
                 </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Link href="/settings" className="rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-center text-sm font-semibold text-white backdrop-blur hover:bg-white/15">
+                    Open settings
+                  </Link>
+                  <Link href="/system" className="rounded-full bg-teal-400 px-4 py-2.5 text-center text-sm font-semibold text-[#071311] hover:bg-teal-300">
+                    Check readiness
+                  </Link>
+                </div>
               </section>
             </aside>
           </div>

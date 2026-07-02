@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
+import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { PermissionMatrix } from "@/components/settings/permission-matrix";
 import { RoleBadge } from "@/components/settings/role-badge";
 import { SettingsCard } from "@/components/settings/settings-card";
 import { SettingsShell } from "@/components/settings/settings-shell";
-import { enterpriseSettingsDemo } from "@/lib/settings/data";
-import { roleLabels } from "@/lib/permissions/roles";
+import { getClinicSettingsSnapshot } from "@/lib/settings/store";
+import type { ClinicRole } from "@/lib/permissions/roles";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 
@@ -14,13 +15,16 @@ export default async function TeamPage() {
   const { isSupabaseConfigured } = getSupabaseEnv();
   const user = await getCurrentUser();
   if (isSupabaseConfigured && !user) redirect("/login");
+  const membership = user ? await getActiveClinicMembershipForUser(user) : null;
+  const snapshot = membership ? await getClinicSettingsSnapshot(membership.clinic_id) : null;
+  const staff = snapshot?.clinic.business_configuration.staff ?? [];
 
   return (
     <SettingsShell
       active="/team"
       eyebrow="Team management"
       title="Roles, invitations, and permissions"
-      description="Demo architecture for scaling from one clinic owner to multi-location teams with clear role boundaries."
+      description="This view now reflects the saved staff configuration alongside the app-wide permission matrix."
     >
       <section className="grid gap-6">
         <SettingsCard title="Team members" description="Clinic-scoped user management prepared for Supabase memberships and RLS.">
@@ -36,16 +40,18 @@ export default async function TeamPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf2f0]">
-                {enterpriseSettingsDemo.team.map((member) => (
-                  <tr key={member.id}>
+                {staff.map((member) => (
+                  <tr key={`${member.email}-${member.name}`}>
                     <td className="px-4 py-4">
                       <p className="font-semibold text-[#10201d]">{member.name}</p>
                       <p className="mt-1 text-[#65736f]">{member.email}</p>
                     </td>
-                    <td className="px-4 py-4"><RoleBadge role={member.role} /></td>
+                    <td className="px-4 py-4">
+                      <RoleBadge role={member.role as ClinicRole} />
+                    </td>
                     <td className="px-4 py-4 text-[#394642]">{member.location}</td>
                     <td className="px-4 py-4 text-[#087968]">{member.status}</td>
-                    <td className="px-4 py-4 text-[#65736f]">{member.lastActive}</td>
+                    <td className="px-4 py-4 text-[#65736f]">Saved</td>
                   </tr>
                 ))}
               </tbody>
@@ -54,19 +60,12 @@ export default async function TeamPage() {
         </SettingsCard>
 
         <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-          <SettingsCard title="Invitation architecture" description="No real emails are sent yet. This models pending invites and future acceptance flows.">
+          <SettingsCard title="Invitation architecture" description="Invites can be layered on top of the saved clinic configuration when the team is ready.">
             <div className="grid gap-3">
-              {enterpriseSettingsDemo.invitations.map((invite) => (
-                <div key={invite.id} className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
-                  <p className="font-semibold text-[#10201d]">{invite.email}</p>
-                  <p className="mt-1 text-sm text-[#65736f]">
-                    {roleLabels[invite.role]} role, invited by {invite.invitedBy}, expires in {invite.expiresIn}
-                  </p>
-                </div>
-              ))}
-              <button type="button" className="rounded-md bg-[#10201d] px-4 py-3 text-sm font-semibold text-white">
-                Invite team member
-              </button>
+              <div className="rounded-lg border border-[#edf2f0] bg-[#fbfdfc] p-4">
+                <p className="font-semibold text-[#10201d]">Invite team member</p>
+                <p className="mt-1 text-sm text-[#65736f]">The saved staff list is ready for invites, role changes, and branch-level access control.</p>
+              </div>
             </div>
           </SettingsCard>
 

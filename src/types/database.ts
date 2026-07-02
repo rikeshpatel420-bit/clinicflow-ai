@@ -5,8 +5,11 @@ export type Database = {
     Tables: {
       clinics: {
         Row: {
+          business_configuration: Json;
           id: string;
           name: string;
+          onboarding_draft: Json;
+          launch_state: Json;
           slug: string;
           status: "active" | "paused" | "suspended" | "archived";
           timezone: string;
@@ -17,8 +20,11 @@ export type Database = {
           deleted_at: string | null;
         };
         Insert: {
+          business_configuration?: Json;
           id?: string;
           name: string;
+          onboarding_draft?: Json;
+          launch_state?: Json;
           slug: string;
           status?: "active" | "paused" | "suspended" | "archived";
           timezone?: string;
@@ -29,8 +35,11 @@ export type Database = {
           deleted_at?: string | null;
         };
         Update: {
+          business_configuration?: Json;
           id?: string;
           name?: string;
+          onboarding_draft?: Json;
+          launch_state?: Json;
           slug?: string;
           status?: "active" | "paused" | "suspended" | "archived";
           timezone?: string;

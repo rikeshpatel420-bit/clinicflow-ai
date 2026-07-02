@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClinicWorkspaceForUser } from "@/lib/auth/clinic-workspace";
 import { buildOnboardingBlueprint, generateOnboardingPackage, markOnboardingComplete } from "@/lib/onboarding";
+import { buildClinicBusinessConfigurationFromBlueprint } from "@/lib/settings/configuration";
+import { saveClinicSettingsSnapshot } from "@/lib/settings/store";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 import type { OnboardingActionState } from "@/lib/onboarding";
@@ -64,6 +66,7 @@ export async function createClinicAction(
   }
 
   const generated = generateOnboardingPackage(blueprint);
+  const clinicConfiguration = buildClinicBusinessConfigurationFromBlueprint(blueprint);
   await markOnboardingComplete({
     businessName: blueprint.businessName,
     clinicId: workspace.clinicId,
@@ -71,11 +74,16 @@ export async function createClinicAction(
     fullName: blueprint.ownerName,
     userId: workspace.appUserId,
   });
+  await saveClinicSettingsSnapshot({
+    clinicId: workspace.clinicId,
+    configuration: clinicConfiguration,
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/onboarding");
   revalidatePath("/platform");
   revalidatePath("/system");
+  revalidatePath("/settings");
 
   return {
     generated,

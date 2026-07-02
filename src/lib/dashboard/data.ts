@@ -29,6 +29,9 @@ export type DashboardData = {
 
 export const demoClinic: Clinic = {
   id: "11111111-1111-4111-8111-111111111111",
+  business_configuration: {},
+  onboarding_draft: {},
+  launch_state: {},
   name: "Demo Dental Clinic",
   slug: "demo-dental-clinic",
   status: "active",

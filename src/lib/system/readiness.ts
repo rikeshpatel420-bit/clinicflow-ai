@@ -5,6 +5,7 @@ import { getDeploymentMode } from "@/lib/deployment/readiness";
 import { getClinicDashboardData, type ClinicDashboardData } from "@/lib/dashboard/live-data";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getClinicSettingsSnapshot } from "@/lib/settings/store";
 import { getTwilioPublicHealth, getTwilioSetupHealthForClinic, hasConfiguredTwilioSender, type TwilioSetupHealth } from "@/lib/twilio/health";
 import { isTwilioConnectionActive } from "@/lib/twilio/config";
 
@@ -54,6 +55,11 @@ export type ProductionReadinessReport = {
   twilio: {
     publicHealth: ReturnType<typeof getTwilioPublicHealth>;
     setupHealth: TwilioSetupHealth | null;
+  };
+  configuration: {
+    blockers: string[];
+    ready: boolean;
+    score: number;
   };
   urls: {
     health: string;
@@ -213,12 +219,14 @@ function buildRouteChecks(report: {
 function buildStepChecks(input: {
   dashboard: ClinicDashboardData;
   env: ReturnType<typeof buildEnvChecks>;
+  settings: Awaited<ReturnType<typeof getClinicSettingsSnapshot>> | null;
   membershipExists: boolean;
   twilioHealth: TwilioSetupHealth | null;
   twilioPublicHealth: ReturnType<typeof getTwilioPublicHealth>;
 }) {
   const twilio = input.twilioHealth;
   const env = input.env;
+  const settings = input.settings;
   const urls = input.twilioPublicHealth.webhookUrls;
   const totalCalls = metricValue(input.dashboard.metrics, "Total calls");
   const smsSent = metricValue(input.dashboard.metrics, "SMS sent");
@@ -231,8 +239,20 @@ function buildStepChecks(input: {
   const healthReady = input.twilioPublicHealth.connected && !env.twilioTestMode;
   const testCallReady = totalCalls > 0;
   const testSmsReady = smsSent > 0;
+  const configurationReady = Boolean(settings?.ready);
+  const configurationScore = settings?.clinic.launch_state.score ?? 0;
 
   return [
+    {
+      actionHref: "/settings",
+      actionLabel: "Open settings",
+      detail: configurationReady
+        ? `Business configuration is saved at ${configurationScore}%.`
+        : "Save the business profile, hours, branding, staff, and launch settings in /settings.",
+      label: "Business configuration",
+      status: configurationReady ? "complete" : "missing",
+      value: statusLabel(configurationReady ? "complete" : "missing"),
+    },
     {
       actionHref: "/integrations/twilio",
       actionLabel: "Open Twilio setup",
@@ -345,6 +365,7 @@ function buildStepChecks(input: {
 function summarizeBlockers(report: {
   env: ReturnType<typeof buildEnvChecks>;
   membershipExists: boolean;
+  settings: Awaited<ReturnType<typeof getClinicSettingsSnapshot>> | null;
   steps: ReadinessStep[];
   tables: TableAuditItem[];
   twilioHealth: TwilioSetupHealth | null;
@@ -363,6 +384,13 @@ function summarizeBlockers(report: {
   if (!report.env.openAiKey) blockers.add("Set OPENAI_API_KEY for call summaries and recommendations.");
   if (!report.env.twilioSenderConfigured) {
     blockers.add("Set either TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER for outbound SMS recovery.");
+  }
+  if (!report.settings?.ready) {
+    if (!report.settings) {
+      blockers.add("Save the business configuration in /settings so launch readiness can be calculated.");
+    } else {
+      report.settings.clinic.launch_state.blockers.slice(0, 3).forEach((blocker) => blockers.add(blocker));
+    }
   }
   if (!report.twilioHealth?.connection) {
     blockers.add("Create the clinic Twilio connection row with Account SID, auth token, voice number, and forwarding number.");
@@ -390,11 +418,13 @@ export async function buildProductionReadinessReport(input: {
   const membership = input.user ? await getActiveClinicMembershipForUser(input.user) : null;
   const dashboard = await getClinicDashboardData(input.user);
   const publicHealth = getTwilioPublicHealth(input.baseUrl);
+  const settings = membership ? await getClinicSettingsSnapshot(membership.clinic_id) : null;
   const setupHealth = membership && env.supabaseServiceRoleKey ? await getTwilioSetupHealthForClinic(membership.clinic_id, { baseUrl: input.baseUrl }) : null;
   const tables = await buildTableAudit();
   const steps = buildStepChecks({
     dashboard,
     env,
+    settings,
     membershipExists: Boolean(membership),
     twilioHealth: setupHealth,
     twilioPublicHealth: publicHealth,
@@ -402,6 +432,7 @@ export async function buildProductionReadinessReport(input: {
   const blockers = summarizeBlockers({
     env,
     membershipExists: Boolean(membership),
+    settings,
     steps,
     tables,
     twilioHealth: setupHealth,
@@ -428,6 +459,11 @@ export async function buildProductionReadinessReport(input: {
     twilio: {
       publicHealth,
       setupHealth,
+    },
+    configuration: {
+      blockers: settings?.clinic.launch_state.blockers ?? [],
+      ready: Boolean(settings?.ready),
+      score: settings?.clinic.launch_state.score ?? 0,
     },
     urls: buildWebhookUrls(input.baseUrl),
   } satisfies ProductionReadinessReport;

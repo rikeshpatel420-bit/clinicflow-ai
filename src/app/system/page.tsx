@@ -105,6 +105,43 @@ export default async function SystemPage() {
           </section>
         ) : null}
 
+        <section className="grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
+          <article className="rounded-[28px] border border-[#dce6e3] bg-white p-6 shadow-[0_18px_60px_rgba(16,33,29,0.06)]">
+            <p className="text-sm font-semibold text-[#087968]">Saved business configuration</p>
+            <h2 className="mt-2 text-2xl font-semibold text-[#10201d]">{report.configuration.ready ? "Ready" : "Needs setup"}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#5d6d68]">
+              The clinic row now stores the live business configuration, launch score, and blockers so the owner can leave and return later.
+            </p>
+            <div className="mt-4 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-4xl font-semibold tracking-tight text-[#10201d]">{report.configuration.score}%</p>
+                <p className="mt-1 text-sm text-[#65736f]">Configuration score</p>
+              </div>
+              <Link href="/settings" className="rounded-full border border-[#cdd8d5] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] shadow-sm hover:border-[#9db2ad]">
+                Open settings
+              </Link>
+            </div>
+          </article>
+
+          <article className="rounded-[28px] border border-[#dce6e3] bg-white p-6 shadow-[0_18px_60px_rgba(16,33,29,0.06)]">
+            <p className="text-sm font-semibold text-[#087968]">Launch blockers</p>
+            <h2 className="mt-2 text-2xl font-semibold text-[#10201d]">What still prevents go-live</h2>
+            {report.configuration.blockers.length ? (
+              <div className="mt-4 grid gap-2">
+                {report.configuration.blockers.slice(0, 4).map((blocker) => (
+                  <p key={blocker} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+                    {blocker}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-xl border border-[#c8eee6] bg-[#f7fffd] px-3 py-2 text-sm font-medium text-[#087968]">
+                No configuration blockers remain.
+              </p>
+            )}
+          </article>
+        </section>
+
         <section className="grid gap-4 lg:grid-cols-2">
           {report.steps.map((step) => (
             <article

@@ -8,6 +8,11 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Shared conversation engine
    - Shared workflow primitives
    - Shared template helpers
+   - Shared notification engine
+   - Shared event bus
+   - Shared audit engine
+   - Shared timeline engine
+   - Shared customer 360 model
    - Shared profile builder and contact entity presets
    - Shared registry and profile loading
    - Shared Flow Factory generator and wizard helpers
@@ -52,6 +57,8 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Workflow executor
    - Notification rules
    - Recovery rules
+   - Audit trail integration
+   - Event emission
 
 8. Dashboard profile
    - Colours
@@ -63,18 +70,29 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Generated route plans
    - Generated documentation
    - Generated smoke tests
+   - Default profile bundles
+   - Default workflow blueprints
+   - Default notification templates
+   - Navigation and dashboard defaults
 
 ## Folder structure
 
 ```text
 src/lib/flow-platform/
   core.ts
+  audit.ts
   factory.ts
+  health.ts
+  notifications.ts
+  events.ts
   index.ts
+  customer.ts
   profile-builder.ts
   registry.ts
   runtime.ts
   catalog.ts
+  templates.ts
+  timeline.ts
   workflow-engine.ts
   types.ts
   profiles/
@@ -111,6 +129,32 @@ src/lib/flow-factory/
 7. Set `FLOW_PLATFORM_PROFILE_ID` if you want to switch away from the default profile
 8. Point the product runtime at that profile through `getActiveFlowPlatformProfile()`
 9. Use Flow Factory to generate the new product package, documentation, and smoke tests from a configuration wizard
+
+## Shared platform services
+
+### Notification Engine
+
+The Notification Engine resolves a profile-aware template, renders variables, and hands the result to an available transport. SMS and email can send immediately when a transport is registered. WhatsApp and push are supported at the interface layer so future connectors can plug in without changing product code. Internal notifications and dashboard updates remain first-class even when an external transport is not available.
+
+### Template Registry
+
+The template registry keeps the canonical notification messages in one place. Each profile can override wording while inheriting the common structure for appointment confirmations, reminders, missed-call recovery, quote follow-up, emergency escalation, payment reminders, review requests, booking receipts, new leads, and human transfer messages.
+
+### Event Bus
+
+The event bus is the platform communication layer. Modules publish events such as `call.completed`, `lead.created`, `workflow.completed`, and `notification.sent`, while other modules can subscribe without direct coupling.
+
+### Audit Engine
+
+The audit engine writes a reusable record for workflow executions, notifications, AI interactions, bookings, escalations, and transfers. Audit records can be transformed into timeline items or sent onto the event bus.
+
+### Timeline Engine
+
+The timeline engine merges calls, SMS, emails, bookings, notes, tasks, AI summaries, notifications, and workflow history into one chronological customer feed.
+
+### Customer 360 model
+
+The customer model holds shared contact details, tags, communication history, summaries, tasks, appointments, and placeholder invoice hooks so every Flow product can grow into the same customer record shape.
 
 ## How to add intents
 
@@ -172,6 +216,8 @@ ClinicFlow uses the Flow Platform profile in:
 - SMS recovery messages
 - AI call summaries
 - workflow prompt versions
+- profile-aware templates and notifications
+- reusable audit records and timeline items
 
 That means future products can reuse the same engine and only swap the profile.
 

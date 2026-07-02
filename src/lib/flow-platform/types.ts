@@ -43,6 +43,29 @@ export type FlowMessageTemplates = {
   };
 };
 
+export type FlowTemplateChannel = "sms" | "email" | "whatsapp" | "push" | "internal" | "dashboard";
+export type FlowTemplatePriority = "low" | "normal" | "high" | "urgent";
+
+export type FlowTemplateDefinition = {
+  body: string;
+  channel: FlowTemplateChannel;
+  description: string;
+  id: string;
+  priority?: FlowTemplatePriority;
+  profileOverride?: boolean;
+  subject?: string;
+  title: string;
+  variables: readonly string[];
+};
+
+export type FlowTemplateRegistry = {
+  defaultTemplateCount: number;
+  overrideTemplateCount: number;
+  profileId: string;
+  profileName: string;
+  templates: readonly FlowTemplateDefinition[];
+};
+
 export type FlowIntentDefinition<TIntent extends string> = {
   followUpQuestion: string;
   intent: TIntent;
@@ -231,10 +254,138 @@ export type FlowWorkflowDefinition = {
 };
 
 export type FlowNotificationRule = {
-  channel: "dashboard" | "email" | "sms";
+  channel: "dashboard" | "email" | "internal" | "push" | "sms" | "whatsapp";
   key: string;
+  priority?: FlowTemplatePriority;
+  profileOverride?: boolean;
+  retryCount?: number;
   template: string;
+  templateId?: string;
+  variables?: readonly string[];
   trigger: string;
+};
+
+export type FlowNotificationDispatchStatus = "sent" | "queued" | "skipped" | "unavailable" | "failed";
+
+export type FlowNotificationDispatchRecord = {
+  channel: FlowNotificationRule["channel"];
+  clinicId: string | null;
+  createdAt: string;
+  eventType: string;
+  error?: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+  outcome: FlowNotificationDispatchStatus;
+  profileId: string;
+  priority: FlowTemplatePriority;
+  retryCount: number;
+  templateId: string;
+  templateTitle: string;
+  variables: Record<string, string>;
+};
+
+export type FlowEventTopic =
+  | "call.completed"
+  | "call.missed"
+  | "lead.created"
+  | "booking.requested"
+  | "quote.requested"
+  | "payment.received"
+  | "customer.created"
+  | "workflow.completed"
+  | "notification.sent"
+  | "timeline.recorded"
+  | "audit.recorded"
+  | "human.transfer.requested"
+  | (string & {});
+
+export type FlowEventRecord = {
+  clinicId: string | null;
+  createdAt: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+  payload: Record<string, unknown>;
+  profileId: string;
+  source: string;
+  topic: FlowEventTopic;
+};
+
+export type FlowEventSubscriber = (event: FlowEventRecord) => void | Promise<void>;
+
+export type FlowAuditCategory = "ai" | "booking" | "customer" | "notification" | "timeline" | "transfer" | "workflow" | "escalation";
+
+export type FlowAuditRecord = {
+  actor?: string;
+  category: FlowAuditCategory;
+  clinicId: string | null;
+  createdAt: string;
+  detail: string;
+  entityId?: string;
+  entityType?: string;
+  eventType: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+  outcome: "info" | "success" | "failed" | "skipped";
+  profileId: string;
+};
+
+export type FlowTimelineItemType = "ai_summary" | "audit" | "booking" | "call" | "email" | "note" | "notification" | "sms" | "task" | "workflow";
+
+export type FlowTimelineItem = {
+  clinicId: string | null;
+  createdAt: string;
+  detail: string;
+  direction?: "inbound" | "internal" | "outbound";
+  entityId?: string;
+  id: string;
+  metadata?: Record<string, unknown>;
+  profileId: string;
+  status?: string;
+  title: string;
+  type: FlowTimelineItemType;
+};
+
+export type FlowCustomerCommunication = {
+  channel: Exclude<FlowTimelineItemType, "audit" | "booking" | "call" | "note" | "task" | "workflow"> | "call";
+  createdAt: string;
+  detail: string;
+  id: string;
+  status: string;
+};
+
+export type FlowCustomer360 = {
+  aiNotes: readonly string[];
+  appointments: readonly {
+    id: string;
+    status: string;
+    startsAt?: string;
+    summary: string;
+  }[];
+  addresses: readonly string[];
+  clinicId: string | null;
+  communications: readonly FlowCustomerCommunication[];
+  contact: {
+    email?: string;
+    fullName: string;
+    phone?: string;
+  };
+  conversationSummaries: readonly string[];
+  history: readonly FlowTimelineItem[];
+  id: string;
+  invoices: readonly {
+    id: string;
+    note: string;
+    status: string;
+  }[];
+  intentHistory: readonly string[];
+  jobs: readonly {
+    id: string;
+    status: string;
+    summary: string;
+  }[];
+  metadata?: Record<string, unknown>;
+  profileId: string;
+  tags: readonly string[];
 };
 
 export type FlowDashboardTheme = {

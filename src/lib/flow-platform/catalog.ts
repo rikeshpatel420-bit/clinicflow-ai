@@ -1,4 +1,5 @@
 import { flowPlatformProfiles, type FlowPlatformProfileId } from "./registry";
+import { buildFlowTemplateRegistry } from "./templates";
 
 export type FlowPlatformProfileSummary = {
   description: string;
@@ -8,6 +9,9 @@ export type FlowPlatformProfileSummary = {
   industry: string;
   intentCount: number;
   name: string;
+  notificationCount: number;
+  triggerCount: number;
+  templateCount: number;
   workflowCount: number;
   voice: string;
 };
@@ -22,6 +26,9 @@ export function getFlowPlatformProfileSummaries(): FlowPlatformProfileSummary[] 
       industry: profile.industry.name,
       intentCount: profile.conversation.voice.intentDefinitions.length + profile.conversation.leads.intentDefinitions.length,
       name: profile.clinic.name,
+      notificationCount: profile.notifications.length,
+      triggerCount: new Set([...profile.workflows.map((workflow) => workflow.trigger), ...profile.notifications.map((notification) => notification.trigger)]).size,
+      templateCount: buildFlowTemplateRegistry(profile).templates.length,
       workflowCount: profile.workflows.length,
       voice: profile.conversation.voice.voice,
     }),
@@ -31,4 +38,3 @@ export function getFlowPlatformProfileSummaries(): FlowPlatformProfileSummary[] 
 export function getFlowPlatformProfileSummary(id: FlowPlatformProfileId) {
   return getFlowPlatformProfileSummaries().find((profile) => profile.id === id) ?? null;
 }
-

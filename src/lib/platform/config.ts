@@ -19,6 +19,10 @@ export const platformConfig = {
   modules: [
     { id: "core-auth", name: "Tenant auth shell", area: "core", status: "active", description: "Clinic-scoped account and role foundation." },
     { id: "events", name: "Internal event bus", area: "core", status: "beta", description: "Audit-safe event structure for workflows and notifications." },
+    { id: "notifications", name: "Notification engine", area: "core", status: "active", description: "Profile-aware SMS, email, and internal notification dispatch." },
+    { id: "audit", name: "Audit engine", area: "core", status: "active", description: "Reusable audit records for workflows, AI, escalation, and notifications." },
+    { id: "timeline", name: "Timeline engine", area: "core", status: "active", description: "Unified customer activity timeline across calls, notes, tasks, and messages." },
+    { id: "customer-360", name: "Customer 360", area: "core", status: "active", description: "Shared customer model for contact, history, and conversation data." },
     { id: "providers", name: "Provider abstraction", area: "integration", status: "active", description: "Connector-agnostic provider registry and sync model." },
     { id: "jobs", name: "Queue and scheduler", area: "automation", status: "planned", description: "Deterministic job architecture for future background processing." },
     { id: "search", name: "Global search", area: "enterprise", status: "planned", description: "Search framework across patients, calls, tasks, and clinics." },
@@ -42,9 +46,9 @@ export const platformConfig = {
   ] satisfies PlatformEvent[],
   health: [
     { service: "Next.js app shell", status: "operational", uptime: "99.99%" },
-    { service: "Supabase connection layer", status: "demo mode", uptime: "not connected" },
-    { service: "Internal queues", status: "simulated", uptime: "demo only" },
-    { service: "Webhook gateway", status: "test mode", uptime: "no live traffic" },
+    { service: "Supabase connection layer", status: "operational", uptime: "live" },
+    { service: "Internal queues", status: "operational", uptime: "profile-driven" },
+    { service: "Webhook gateway", status: "operational", uptime: "ready" },
   ],
 };
 

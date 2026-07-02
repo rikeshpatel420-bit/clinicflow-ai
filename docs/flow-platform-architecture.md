@@ -65,7 +65,12 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Icons
    - Labels
 
-9. Flow Factory
+9. Internal profile validation
+   - Shared profile comparison page
+   - Mandatory section checks
+   - Missing-configuration reporting
+
+10. Flow Factory
    - Blueprint capture wizard
    - Generated route plans
    - Generated documentation
@@ -74,6 +79,7 @@ Flow Platform is the reusable core. ClinicFlow is the first product profile runn
    - Default workflow blueprints
    - Default notification templates
    - Navigation and dashboard defaults
+   - Validator-ready profile summaries
 
 ## Folder structure
 
@@ -83,6 +89,7 @@ src/lib/flow-platform/
   audit.ts
   factory.ts
   health.ts
+  validator.ts
   notifications.ts
   events.ts
   index.ts
@@ -102,6 +109,12 @@ src/lib/flow-platform/
     heatflow.ts
     plumbflow.ts
     sparkflow.ts
+    vetflow.ts
+src/app/platform/
+  page.tsx
+  profiles/page.tsx
+  profiles/[profileId]/page.tsx
+  workflows/page.tsx
 src/lib/flow-factory/
   generator.ts
   index.ts
@@ -229,6 +242,7 @@ BuildFlow and EstateFlow now show the same pattern in construction and property,
 
 Flow Factory adds a configuration layer on top of the profile registry so new verticals can be described once and packaged without touching the platform core.
 The workflow engine sits underneath those profiles so every product can describe what happens after an enquiry, missed call, booking request, escalation, or follow-up event.
+The profile comparison page at `/platform/profiles` shows the installed product set, validation state, workflow counts, template counts, and shared inheritance so the team can verify that a new vertical only changes configuration.
 
 ## Active profile selection
 

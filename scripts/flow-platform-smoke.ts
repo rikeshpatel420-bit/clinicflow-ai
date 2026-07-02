@@ -10,15 +10,18 @@ import {
   getActiveFlowPlatformProfile,
   getActiveFlowPlatformProfileId,
   getFlowPlatformProfileSummaries,
+  getFlowPlatformProfileValidationSummaries,
   summarizeFlowTemplates,
 } from "../src/lib/flow-platform";
 
 async function main() {
-  const expectedProfileIds = ["buildflow", "clinicflow", "estateflow", "plumbflow", "sparkflow", "heatflow"] as const;
+  const expectedProfileIds = ["buildflow", "clinicflow", "estateflow", "plumbflow", "sparkflow", "heatflow", "vetflow"] as const;
 
   const summaries = getFlowPlatformProfileSummaries();
+  const validations = getFlowPlatformProfileValidationSummaries();
   const summaryIds = summaries.map((summary) => summary.id).sort();
   const expectedIds = [...expectedProfileIds].sort();
+  const validationMap = new Map(validations.map((validation) => [validation.id, validation]));
 
   if (JSON.stringify(summaryIds) !== JSON.stringify(expectedIds)) {
     throw new Error(`Flow Platform profile catalog mismatch: expected ${expectedIds.join(", ")}, received ${summaryIds.join(", ")}`);
@@ -54,6 +57,15 @@ async function main() {
 
     if (profile.triggerCount <= 0) {
       throw new Error(`Profile ${profile.id} has no registered triggers`);
+    }
+
+    const validation = validationMap.get(profile.id);
+    if (!validation) {
+      throw new Error(`Profile ${profile.id} has no validation summary`);
+    }
+
+    if (!validation.platformReady) {
+      throw new Error(`Profile ${profile.id} failed validation: ${validation.missing.join(", ")}`);
     }
   }
 
@@ -140,4 +152,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-

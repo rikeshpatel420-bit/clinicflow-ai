@@ -16,6 +16,8 @@ export * from "./profiles/estateflow";
 export * from "./profiles/heatflow";
 export * from "./profiles/plumbflow";
 export * from "./profiles/sparkflow";
+export * from "./profiles/vetflow";
 export * from "./runtime";
 export * from "./workflow-engine";
+export * from "./validator";
 export * from "./types";

@@ -1,21 +1,23 @@
 # EstateFlow Profile
 
-EstateFlow is the property and estate agency vertical on Flow Platform.
+EstateFlow is the property and estate agency profile running on the shared Flow Platform.
 
-## Purpose
+## What EstateFlow changes
 
-- Capture valuations
-- Book viewings
-- Route property enquiries
-- Handle maintenance and tenancy follow-up
+- Property and tenancy terminology
+- Valuation and viewing booking language
+- Calm, professional property-management tone
+- Violet brand palette and house-style dashboard labels
+- Maintenance and tenancy escalation wording
 
-## Tone
+## What EstateFlow inherits
 
-- Warm
-- Calm
-- Professional
-- British
-- Reassuring
+- Shared conversation engine
+- Shared voice engine
+- Shared workflow engine
+- Shared notification engine
+- Shared event bus, audit engine, timeline engine, and customer model
+- Shared Flow Factory generation and validation
 
 ## Core workflows
 
@@ -28,13 +30,29 @@ EstateFlow is the property and estate agency vertical on Flow Platform.
 - Buyer callback
 - Offer follow-up
 
-## Shared pattern
+## Core entities
 
-EstateFlow uses the shared profile builder for:
+- Full name
+- Phone
+- Email
+- Postcode
+- Address
+- Property type
+- Tenancy type
+- Budget
+- Move date
+- Viewing time
+- Access notes
 
-- contact entities
-- message templates
-- summary templates
-- knowledge base defaults
-- workflow scaffolding
+## Voice and messaging
 
+- Voice: `Polly.Amy-Neural`
+- SSML: enabled
+- Greeting: calm property receptionist welcome
+- Closing: practical handoff to the team
+- SMS: missed-call recovery and callback wording tailored to property enquiries
+- Email: valuation and viewing follow-up wording tailored to property enquiries
+
+## Validation
+
+EstateFlow is considered valid when the profile has voice, templates, workflows, branding, prompts, navigation metadata, notification rules, emergency rules, booking rules, and AI configuration.

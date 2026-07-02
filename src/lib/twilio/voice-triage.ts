@@ -6,23 +6,7 @@ export type VoiceIntent = string;
 export type TreatmentType = string;
 
 export type VoiceEntity =
-  | "accessNotes"
-  | "address"
-  | "budget"
-  | "deadline"
-  | "email"
-  | "fullName"
-  | "mobileNumber"
-  | "moveDate"
-  | "phoneNumber"
-  | "postcode"
-  | "preferredAppointmentTime"
-  | "preferredVisitTime"
-  | "projectType"
-  | "propertyType"
-  | "startDate"
-  | "tenancyType"
-  | "viewingTime";
+  string;
 
 export type VoiceCaptureDetails = {
   breathingOrSwallowingIssue: boolean;

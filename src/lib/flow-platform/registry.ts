@@ -4,6 +4,7 @@ import { estateFlowPlatformProfile } from "./profiles/estateflow";
 import { heatFlowPlatformProfile } from "./profiles/heatflow";
 import { plumbFlowPlatformProfile } from "./profiles/plumbflow";
 import { sparkFlowPlatformProfile } from "./profiles/sparkflow";
+import { vetFlowPlatformProfile } from "./profiles/vetflow";
 
 export const flowPlatformProfiles = {
   buildflow: buildFlowPlatformProfile,
@@ -12,6 +13,7 @@ export const flowPlatformProfiles = {
   heatflow: heatFlowPlatformProfile,
   plumbflow: plumbFlowPlatformProfile,
   sparkflow: sparkFlowPlatformProfile,
+  vetflow: vetFlowPlatformProfile,
 } as const;
 
 export type FlowPlatformProfileId = keyof typeof flowPlatformProfiles;

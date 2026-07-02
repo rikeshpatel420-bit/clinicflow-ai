@@ -89,9 +89,14 @@ export default async function PlatformPage() {
               Use Flow Factory to generate a new configuration package, route plan, voice profile, documentation, and smoke tests without
               touching the shared platform code.
             </p>
-            <Link href="/factory" className="mt-3 inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a2f2b]">
-              Open Flow Factory
-            </Link>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <Link href="/factory" className="inline-flex rounded-md bg-[#10201d] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1a2f2b]">
+                Open Flow Factory
+              </Link>
+              <Link href="/platform/profiles" className="inline-flex rounded-md border border-[#dce6e3] bg-white px-4 py-2.5 text-sm font-semibold text-[#10201d] hover:bg-[#f7faf9]">
+                Compare profiles
+              </Link>
+            </div>
           </div>
         </article>
         <article className="rounded-lg border border-[#dce6e3] bg-white p-5 shadow-sm">

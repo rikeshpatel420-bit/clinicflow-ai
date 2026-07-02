@@ -23,7 +23,7 @@ export default async function PlatformProfilePage(props: { params: Promise<{ pro
 
   return (
     <PlatformShell
-      active="/platform"
+      active="/platform/profiles"
       eyebrow="Profile detail"
       title={profile.clinic.name}
       description={`Reusable Flow Platform profile for ${profile.industry.name.toLowerCase()} workflows.`}

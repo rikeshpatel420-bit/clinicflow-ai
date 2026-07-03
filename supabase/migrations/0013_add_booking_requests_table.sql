@@ -3,7 +3,7 @@ create table if not exists public.booking_requests (
   clinic_id uuid not null references public.clinics(id) on delete cascade,
   call_id uuid references public.calls(id) on delete set null,
   lead_id uuid references public.patient_leads(id) on delete set null,
-  patient_id uuid references public.patients(id) on delete set null,
+  patient_id uuid,
   confirmation_reference text not null unique,
   source text not null default 'voice' check (source in ('voice', 'sms', 'manual', 'web')),
   booking_type text not null default 'appointment_request',

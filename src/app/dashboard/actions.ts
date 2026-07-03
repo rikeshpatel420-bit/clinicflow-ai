@@ -282,35 +282,73 @@ export async function loadDemoDataAction() {
     redirect("/dashboard?demo=error");
   }
 
-  const bookingRequests: Inserts<"booking_requests">[] = demoCases
-    .map((item, index) => {
-      if (!["booked"].includes(item.status)) return null;
+  const bookedDemoCases = demoCases
+    .map((item, index) => ({ index, item }))
+    .filter(({ item }) => item.status === "booked");
 
-      const lead = insertedLeads[index];
-      const call = insertedCalls[index];
+  const bookingRequests: Inserts<"booking_requests">[] = bookedDemoCases.map(({ item, index }) => {
+    const lead = insertedLeads[index];
+    const call = insertedCalls[index];
 
-      return {
-        booking_type: item.scenario.replace(/\s+/g, "_").toLowerCase(),
-        call_id: call?.id ?? null,
-        clinic_id: clinicId,
-        confirmation_reference: `DEMO-${clinicId.slice(0, 8).toUpperCase()}-${index + 1}`,
-        created_by: user.id,
-        lead_id: lead?.id ?? null,
-        next_step: "The practice will confirm the exact time shortly.",
-        notes: `${demoMarker} ${item.name}: ${item.scenario}. ${item.notes}`,
-        preferred_time: "As soon as possible",
-        requested_at: hoursAgo(4 + index),
-        source: "manual",
-        status: "requested",
-        updated_by: user.id,
-      } satisfies Inserts<"booking_requests">;
-    })
-    .filter(Boolean) as Inserts<"booking_requests">[];
+    return {
+      booking_type: item.scenario.replace(/\s+/g, "_").toLowerCase(),
+      call_id: call?.id ?? null,
+      clinic_id: clinicId,
+      confirmation_reference: `DEMO-${clinicId.slice(0, 8).toUpperCase()}-${index + 1}`,
+      created_by: user.id,
+      lead_id: lead?.id ?? null,
+      next_step: "The practice will confirm the exact time shortly.",
+      notes: `${demoMarker} ${item.name}: ${item.scenario}. ${item.notes}`,
+      preferred_time: "As soon as possible",
+      requested_at: hoursAgo(4 + index),
+      source: "manual",
+      status: "requested",
+      updated_by: user.id,
+    } satisfies Inserts<"booking_requests">;
+  });
 
-  if (bookingRequests.length > 0) {
-    const { error: bookingRequestsError } = await admin.from("booking_requests").insert(bookingRequests);
+  const { data: insertedBookingRequests, error: bookingRequestsError } = await admin
+    .from("booking_requests")
+    .insert(bookingRequests)
+    .select("id, confirmation_reference");
 
-    if (bookingRequestsError) {
+  if (bookingRequestsError || !insertedBookingRequests) {
+    redirect("/dashboard?demo=error");
+  }
+
+  const insertedBookingRequestByReference = new Map(insertedBookingRequests.map((bookingRequest) => [bookingRequest.confirmation_reference, bookingRequest]));
+
+  const appointments: Inserts<"appointments">[] = bookedDemoCases.map((entry) => {
+    const bookingRequest = insertedBookingRequestByReference.get(`DEMO-${clinicId.slice(0, 8).toUpperCase()}-${entry.index + 1}`);
+    const lead = insertedLeads[entry.index];
+    const call = insertedCalls[entry.index];
+    const appointmentStart = hoursFromNow(24 + entry.index);
+    const appointmentEnd = hoursFromNow(24.5 + entry.index);
+
+    return {
+      appointment_end: appointmentEnd,
+      appointment_start: appointmentStart,
+      booking_request_id: bookingRequest?.id ?? null,
+      call_id: call?.id ?? null,
+      clinic_id: clinicId,
+      confirmation_reference: bookingRequest?.confirmation_reference ?? `DEMO-APT-${clinicId.slice(0, 8).toUpperCase()}-${entry.index + 1}`,
+      created_by: user.id,
+      lead_id: lead?.id ?? null,
+      notes: `${demoMarker} Confirmed appointment for ${entry.item.name}: ${entry.item.scenario}.`,
+      patient_email: entry.item.email,
+      patient_name: entry.item.name,
+      patient_phone: entry.item.caller,
+      source: "dashboard",
+      status: "confirmed",
+      treatment_type: entry.item.scenario,
+      updated_by: user.id,
+    } satisfies Inserts<"appointments">;
+  });
+
+  if (appointments.length > 0) {
+    const { error: appointmentsError } = await admin.from("appointments").insert(appointments);
+
+    if (appointmentsError) {
       redirect("/dashboard?demo=error");
     }
   }

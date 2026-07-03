@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import type {
+  Appointment,
   BookingRequest,
   Call,
   Clinic,
@@ -46,7 +47,30 @@ export type WorkflowActivityItem = {
   title: string;
 };
 
-export type BookingRequestRow = Pick<BookingRequest, "booking_type" | "confirmation_reference" | "id" | "next_step" | "preferred_time" | "requested_at" | "status">;
+export type BookingRequestRow = Pick<
+  BookingRequest,
+  "booking_type" | "call_id" | "confirmation_reference" | "id" | "lead_id" | "next_step" | "notes" | "patient_id" | "preferred_time" | "requested_at" | "status"
+>;
+
+export type AppointmentRow = Pick<
+  Appointment,
+  | "appointment_end"
+  | "appointment_start"
+  | "booking_request_id"
+  | "call_id"
+  | "confirmation_reference"
+  | "created_at"
+  | "id"
+  | "lead_id"
+  | "notes"
+  | "patient_email"
+  | "patient_name"
+  | "patient_phone"
+  | "source"
+  | "status"
+  | "treatment_type"
+  | "updated_at"
+>;
 
 type LiveMetricTotals = {
   bookingRequests: number;
@@ -63,6 +87,7 @@ type LiveMetricTotals = {
 
 export type ClinicDashboardData = {
   activity: WorkflowActivityItem[];
+  appointments: AppointmentRow[];
   bookingRequests: BookingRequestRow[];
   businessSummary: {
     aiHandledPercent: number;
@@ -239,6 +264,7 @@ function buildActivity(workflows: RecoveryWorkflow[]): WorkflowActivityItem[] {
 function emptyDashboard(error: string | null = null): ClinicDashboardData {
   return {
     activity: [],
+    appointments: [],
     bookingRequests: [],
     businessSummary: {
       aiHandledPercent: 0,
@@ -275,6 +301,7 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   const [
     { data: clinic, error: clinicError },
     { data: snapshot },
+    { data: appointments, error: appointmentsError },
     { count: totalCallsCount, error: totalCallsError },
     { count: missedCallsCount, error: missedCallsCountError },
     { count: recoveredCallsCount, error: recoveredCallsCountError },
@@ -292,6 +319,14 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
       .order("period_end", { ascending: false })
       .limit(1)
       .maybeSingle<DashboardMetricSnapshot>(),
+    supabase
+      .from("appointments")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("appointment_start", { ascending: false })
+      .limit(24)
+      .returns<AppointmentRow[]>(),
     supabase.from("calls").select("id", { count: "exact", head: true }).eq("clinic_id", membership.clinic_id).is("deleted_at", null),
     supabase
       .from("calls")
@@ -348,16 +383,28 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   ]);
 
   const bookingRequestsLoadError = bookingRequestsError && !isMissingRelationError(bookingRequestsError) ? bookingRequestsError : null;
-  const loadError = clinicError || totalCallsError || missedCallsCountError || recoveredCallsCountError || callsError || smsError || leadsError || workflowsError || bookingRequestsLoadError;
+  const appointmentsLoadError = appointmentsError && !isMissingRelationError(appointmentsError) ? appointmentsError : null;
+  const loadError =
+    clinicError ||
+    totalCallsError ||
+    missedCallsCountError ||
+    recoveredCallsCountError ||
+    callsError ||
+    smsError ||
+    leadsError ||
+    workflowsError ||
+    bookingRequestsLoadError ||
+    appointmentsLoadError;
   const totalCalls = totalCallsCount ?? (calls ?? []).length;
   const missedCalls = missedCallsCount ?? (calls ?? []).filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).length;
   const recoveredCalls = recoveredCallsCount ?? (calls ?? []).filter((call) => call.status === "recovered").length;
+  const confirmedAppointments = (appointments ?? []).filter((appointment) => appointment.status === "confirmed").length;
   const bookingRequestCount = (bookingRequests ?? []).filter((request) => ["requested", "confirmed"].includes(request.status)).length;
   const smsSent = (smsEvents ?? []).filter((event) => event.direction === "outbound" && ["queued", "sent", "delivered"].includes(event.status)).length;
   const smsReplied = (smsEvents ?? []).filter((event) => event.direction === "inbound" && event.recovery_workflow_id !== null).length;
   const liveTotals: LiveMetricTotals = {
     bookingRequests: bookingRequestCount,
-    bookedLeads: (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length,
+    bookedLeads: Math.max(confirmedAppointments, (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length),
     recoveredLeads: (leads ?? []).filter((lead) => lead.status === "recovered").length,
     smsReplied,
     smsSent,
@@ -381,7 +428,7 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
     bookingRequests: bookingRequests ?? [],
     businessSummary: {
       aiHandledPercent,
-      bookings: Math.max(liveTotals.bookingRequests, liveTotals.bookedLeads),
+      bookings: Math.max(confirmedAppointments, liveTotals.bookedLeads),
       callsToday,
       missedCalls,
       outstandingTasks,
@@ -390,6 +437,7 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
     },
     clinic: clinic ?? null,
     error: loadError ? "Some dashboard data could not be loaded." : null,
+    appointments: appointments ?? [],
     leadColumns: buildLeadColumns(leads ?? []),
     metrics: buildMetrics(snapshot ?? null, liveTotals),
     missedCalls: buildMissedCallRows(calls ?? [], workflows ?? [], smsEvents ?? []),

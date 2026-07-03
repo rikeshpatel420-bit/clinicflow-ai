@@ -1,7 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { BookingRequest, Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
+import type { Appointment, BookingRequest, Call, CallRecording, CallTranscript, Json, RecoveryWorkflow, SmsEvent, TwilioConnection, VoicemailMessage } from "@/types/database";
 import { getActiveFlowPlatformProfile } from "@/lib/flow-platform";
-import { bookingRequestSummary, createOrUpdateBookingRequest } from "@/lib/bookings/requests";
+import { bookCalendarAppointment, formatAppointmentSlotLabel } from "@/lib/bookings/appointments";
 import { normalizePhoneNumber } from "./crypto";
 import { logTwilioDbWriteFailure } from "./db-write";
 import { getTwilioConnectionForClinic, getTwilioConnectionForVoiceNumber, resolveTwilioSignatureAuthToken } from "./config";
@@ -597,9 +597,13 @@ function followUpPayloadFromVoicemail(input: TwilioExtendedWebhookPayload): Twil
   };
 }
 
-function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, bookingRequested = false) {
-  if (bookingRequested) {
+function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, appointmentConfirmed = false, bookingRequested = false) {
+  if (appointmentConfirmed) {
     return "booked" as const;
+  }
+
+  if (bookingRequested) {
+    return "queued" as const;
   }
 
   if (details.breathingOrSwallowingIssue || intent === "dental_emergency" || intent === "complaint") {
@@ -609,9 +613,13 @@ function voiceRecoveryStatusFromIntent(intent: VoiceIntent, details: VoiceCaptur
   return "drafted" as const;
 }
 
-function voiceWorkflowStateFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, bookingRequested = false) {
-  if (bookingRequested) {
+function voiceWorkflowStateFromIntent(intent: VoiceIntent, details: VoiceCaptureDetails, appointmentConfirmed = false, bookingRequested = false) {
+  if (appointmentConfirmed) {
     return "booked" as const;
+  }
+
+  if (bookingRequested) {
+    return "awaiting_staff_approval" as const;
   }
 
   if (details.breathingOrSwallowingIssue || intent === "complaint") {
@@ -633,9 +641,13 @@ function voicePriorityFromIntent(intent: VoiceIntent, details: VoiceCaptureDetai
   return "high" as const;
 }
 
-function voiceLeadStatusFromIntent(intent: VoiceIntent, bookingRequested = false) {
-  if (bookingRequested) {
+function voiceLeadStatusFromIntent(intent: VoiceIntent, appointmentConfirmed = false, bookingRequested = false) {
+  if (appointmentConfirmed) {
     return "booked" as const;
+  }
+
+  if (bookingRequested) {
+    return "contacted" as const;
   }
 
   if (intent === "complaint" || intent === "dental_emergency") {
@@ -772,7 +784,7 @@ async function upsertVoiceTriageArtifacts(input: {
       });
       transcript = null;
     } else {
-      return { error: transcriptError.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: null as null, workflow: null as null, urgency };
+      return { error: transcriptError.message, appointment: null as null, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: null as null, workflow: null as null, urgency };
     }
   }
 
@@ -810,7 +822,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patient_leads",
       });
     } else {
-      return { error: existingLeadError.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingLeadError.message, appointment: null as null, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -833,7 +845,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patient_leads",
       });
     } else {
-      return { error: leadResult.error.message, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: leadResult.error.message, appointment: null as null, bookingRequest: null as null, lead: null as null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -850,7 +862,7 @@ async function upsertVoiceTriageArtifacts(input: {
         clinicId: input.connection.clinic_id,
       });
     } else {
-      return { error: existingPatientError.message, bookingRequest: null as null, lead: lead ?? null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingPatientError.message, appointment: null as null, bookingRequest: null as null, lead: lead ?? null, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -887,12 +899,12 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "patients",
       });
     } else {
-      return { error: patientResult.error.message, bookingRequest: null as null, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: patientResult.error.message, appointment: null as null, bookingRequest: null as null, lead, patient: null as null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
   const patient = patientResult.data ?? existingPatient ?? null;
 
-  const workflowState = voiceWorkflowStateFromIntent(input.intent, input.details);
+  const workflowState = voiceWorkflowStateFromIntent(input.intent, input.details, false, bookingRequested);
   const nextAction = buildVoiceNextAction(
     input.intent,
     input.details,
@@ -917,7 +929,7 @@ async function upsertVoiceTriageArtifacts(input: {
         table: "recovery_workflows",
       });
     } else {
-      return { error: existingWorkflow.error.message, bookingRequest: null as null, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
+      return { error: existingWorkflow.error.message, appointment: null as null, bookingRequest: null as null, lead: lead ?? null, patient: patient ?? existingPatient ?? null, transcript: transcript ?? null, workflow: null as null, urgency };
     }
   }
 
@@ -957,6 +969,7 @@ async function upsertVoiceTriageArtifacts(input: {
     } else {
       return {
         error: workflowResult.error.message,
+        appointment: null as null,
         bookingRequest: null as null,
         lead: lead ?? null,
         patient: patient ?? existingPatient ?? null,
@@ -968,30 +981,23 @@ async function upsertVoiceTriageArtifacts(input: {
   }
 
   let bookingRequest: BookingRequest | null = null;
+  let appointment: Appointment | null = null;
+  let bookingConfirmed = false;
+  let bookingSlotLabel: string | null = null;
   if (bookingRequested) {
-    const workflowRecord = workflowResult.data ?? existingWorkflow.data ?? null;
-    const bookingResult = await createOrUpdateBookingRequest({
+    const bookingResult = await bookCalendarAppointment({
       bookingType: input.intent,
       call: input.call,
       clinicId: input.connection.clinic_id,
       createdByUserId: input.connection.created_by,
+      emergency: input.intent === "dental_emergency" || input.details.breathingOrSwallowingIssue,
       lead,
       nextStep: "The practice will confirm the exact time shortly.",
-      notes: bookingRequestSummary({
-        bookingType: input.intent,
-        call: input.call,
-        clinicId: input.connection.clinic_id,
-        lead,
-        nextStep: "The practice will confirm the exact time shortly.",
-        patient,
-        preferredTime: input.details.preferredAppointmentTime ?? input.details.requestedDateTime ?? null,
-        source: "voice",
-        notes: transcriptSummary,
-      }),
+      notes: transcriptSummary,
       patient,
       preferredTime: input.details.preferredAppointmentTime ?? input.details.requestedDateTime ?? null,
-      source: "voice",
-      status: "requested",
+      source: "ai_call",
+      treatmentType: input.treatmentType,
       updatedByUserId: input.connection.created_by,
       workflow: workflowResult.data ?? existingWorkflow.data ?? null,
     });
@@ -1004,48 +1010,27 @@ async function upsertVoiceTriageArtifacts(input: {
       });
     } else {
       bookingRequest = bookingResult.bookingRequest;
-
-      if (lead) {
-        await admin
-          .from("patient_leads")
-          .update({
-            converted_at: now,
-            next_follow_up_at: null,
-            status: "booked",
-            updated_at: now,
-          })
-          .eq("id", lead.id)
-          .eq("clinic_id", input.connection.clinic_id);
-      }
-
-      if (workflowRecord) {
-        await admin
-          .from("recovery_workflows")
-          .update({
-            current_step: Math.max(workflowRecord.current_step ?? 1, 3),
-            next_action_at: null,
-            state: "booked",
-            updated_at: now,
-          })
-          .eq("id", workflowRecord.id)
-          .eq("clinic_id", input.connection.clinic_id);
-      }
+      appointment = bookingResult.appointment;
+      bookingConfirmed = bookingResult.confirmed;
+      bookingSlotLabel = bookingResult.slot?.label ?? null;
     }
   }
 
-  const callStatus = input.details.breathingOrSwallowingIssue ? "answered" : "answered";
-  const callRecoveryStatus = voiceRecoveryStatusFromIntent(input.intent, input.details, Boolean(bookingRequest));
+  const callStatus = bookingConfirmed ? "recovered" : "answered";
+  const callRecoveryStatus = voiceRecoveryStatusFromIntent(input.intent, input.details, bookingConfirmed, Boolean(bookingRequest));
   const { data: updatedCall, error: callUpdateError } = await admin
     .from("calls")
     .update({
       ended_at: null,
       lead_id: lead?.id ?? input.call.lead_id ?? null,
-      recovery_next_action: bookingRequest
-        ? "I've booked your appointment request and the practice will confirm the exact time shortly."
+      recovery_next_action: bookingConfirmed
+        ? `I've booked your appointment for ${bookingSlotLabel ?? "the next available slot"}.`
+        : bookingRequest
+          ? "I've submitted your appointment request and the practice will confirm the exact time shortly."
         : nextAction,
       recovery_status: callRecoveryStatus,
       recovery_updated_at: now,
-      status: bookingRequest ? "recovered" : callStatus,
+      status: callStatus,
       updated_at: now,
     })
     .eq("id", input.call.id)
@@ -1061,16 +1046,19 @@ async function upsertVoiceTriageArtifacts(input: {
     const fallbackUpdatedCall = {
       ...input.call,
       lead_id: lead?.id ?? input.call.lead_id ?? null,
-      recovery_next_action: bookingRequest
-        ? "I've booked your appointment request and the practice will confirm the exact time shortly."
+      recovery_next_action: bookingConfirmed
+        ? `I've booked your appointment for ${bookingSlotLabel ?? "the next available slot"}.`
+        : bookingRequest
+          ? "I've submitted your appointment request and the practice will confirm the exact time shortly."
         : nextAction,
       recovery_status: callRecoveryStatus,
       recovery_updated_at: now,
-      status: bookingRequest ? "recovered" : callStatus,
+      status: callStatus,
       updated_at: now,
     } as Call;
     return {
       error: null,
+      appointment: appointment ?? null,
       bookingRequest: bookingRequest ?? null,
       lead: lead ?? null,
       patient: patient ?? existingPatient ?? null,
@@ -1083,6 +1071,7 @@ async function upsertVoiceTriageArtifacts(input: {
 
   return {
     error: null,
+    appointment,
     bookingRequest,
     lead: lead ?? null,
     patient: patient ?? existingPatient ?? null,
@@ -1119,11 +1108,15 @@ function voiceCompletionResponseText(input: {
   clinicName: string;
   details: VoiceCaptureDetails;
   intent: VoiceIntent;
+  bookingConfirmed?: boolean;
   bookingReference?: string | null;
+  appointmentLabel?: string | null;
   treatmentType: ReturnType<typeof classifyTreatmentType>;
 }) {
-  const bookingLine = input.bookingReference
-    ? `I've booked your appointment request and the practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
+  const bookingLine = input.bookingConfirmed
+    ? `Perfect. I've booked your appointment for ${input.appointmentLabel ?? "the next available slot"}. Your reference is ${input.bookingReference ?? "the practice reference"}.`
+    : input.bookingReference
+      ? `I've submitted your appointment request and the practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
     : `I've made a note for ${input.clinicName}, and the practice will confirm the next step shortly.`;
 
   if (input.details.breathingOrSwallowingIssue) {
@@ -1520,6 +1513,8 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     stage === "collect-details"
       ? voiceCompletionResponseText({
           clinicName: clinicName ?? "ClinicFlow clinic",
+          appointmentLabel: artifactResult.appointment ? formatAppointmentSlotLabel(artifactResult.appointment.appointment_start) : null,
+          bookingConfirmed: Boolean(artifactResult.appointment),
           bookingReference: artifactResult.bookingRequest?.confirmation_reference ?? null,
           details,
           intent,

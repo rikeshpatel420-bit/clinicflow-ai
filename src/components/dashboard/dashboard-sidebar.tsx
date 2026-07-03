@@ -3,7 +3,7 @@ import { dashboardNavItems } from "@/config/navigation";
 
 const primaryItems = dashboardNavItems.slice(0, 12);
 
-export function DashboardSidebar() {
+export function DashboardSidebar({ activePath = "/dashboard" }: { activePath?: string }) {
   return (
     <aside className="hidden border-r border-slate-200 bg-white/95 px-4 py-5 text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white lg:block">
       <div className="flex h-full min-h-[calc(100vh-2.5rem)] flex-col">
@@ -17,7 +17,7 @@ export function DashboardSidebar() {
 
         <nav aria-label="Dashboard navigation" className="mt-8 grid gap-1">
           {primaryItems.map((item) => {
-            const isActive = item.href === "/dashboard";
+            const isActive = activePath === item.href || (item.href !== "/dashboard" && activePath.startsWith(`${item.href}/`));
 
             return (
               <Link

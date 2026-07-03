@@ -21,6 +21,7 @@ const appNav: NavItem[] = [
   { href: "/workflows", label: "Workflows" },
   { href: "/patients", label: "Patients" },
   { href: "/calls", label: "Calls" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/inbox", label: "Inbox" },
   { href: "/integrations/twilio", label: "Integrations" },
   { href: "/settings", label: "Settings" },

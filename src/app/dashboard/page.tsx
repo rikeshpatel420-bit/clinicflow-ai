@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { BusinessHealthPanel } from "@/components/dashboard/business-health-panel";
-import { BookingRequestsPanel } from "@/components/dashboard/booking-requests-panel";
+import { AppointmentsPanel } from "@/components/dashboard/appointments-panel";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { DemoKpiBand } from "@/components/dashboard/demo-kpi-band";
 import { DashboardMetricCardView } from "@/components/dashboard/metric-card";
@@ -102,7 +102,7 @@ export default async function DashboardPage({
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-white">
       <SiteHeader activePath="/dashboard" variant="app" />
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <DashboardSidebar />
+        <DashboardSidebar activePath="/dashboard" />
 
         <section className="min-w-0">
           <MobileDashboardNav />
@@ -145,7 +145,7 @@ export default async function DashboardPage({
 
               <MissedCallsTable rows={dashboard.missedCalls} />
               <LeadPipeline columns={dashboard.leadColumns} />
-              <BookingRequestsPanel requests={dashboard.bookingRequests} />
+              <AppointmentsPanel appointments={dashboard.appointments} bookingRequests={dashboard.bookingRequests} />
             </div>
 
             <aside className="grid content-start gap-6">

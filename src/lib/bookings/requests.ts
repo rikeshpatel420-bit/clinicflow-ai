@@ -79,7 +79,7 @@ export async function createOrUpdateBookingRequest(input: BookingRequestInput) {
     notes: input.notes,
     patient_id: input.patient?.id ?? null,
     preferred_time: input.preferredTime ?? null,
-    requested_at: now,
+    requested_at: existingBooking?.requested_at ?? now,
     source: input.source,
     status: input.status ?? "requested",
     updated_by: input.updatedByUserId ?? input.createdByUserId ?? null,

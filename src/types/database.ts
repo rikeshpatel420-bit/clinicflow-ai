@@ -606,7 +606,7 @@ export type Database = {
         };
         Relationships: [];
       };
-      booking_requests: {
+        booking_requests: {
         Row: {
           id: string;
           clinic_id: string;
@@ -667,9 +667,78 @@ export type Database = {
           updated_at?: string;
           deleted_at?: string | null;
         };
-        Relationships: [];
-      };
-      missed_call_recovery_workflows: {
+          Relationships: [];
+        };
+        appointments: {
+          Row: {
+            id: string;
+            clinic_id: string;
+            lead_id: string | null;
+            call_id: string | null;
+            booking_request_id: string | null;
+            patient_name: string | null;
+            patient_email: string | null;
+            patient_phone: string | null;
+            treatment_type: string;
+            appointment_start: string;
+            appointment_end: string;
+            status: "requested" | "confirmed" | "cancelled" | "reschedule_needed";
+            confirmation_reference: string;
+            source: "ai_call" | "manual" | "dashboard";
+            notes: string | null;
+            created_by: string | null;
+            updated_by: string | null;
+            created_at: string;
+            updated_at: string;
+            deleted_at: string | null;
+          };
+          Insert: {
+            id?: string;
+            clinic_id: string;
+            lead_id?: string | null;
+            call_id?: string | null;
+            booking_request_id?: string | null;
+            patient_name?: string | null;
+            patient_email?: string | null;
+            patient_phone?: string | null;
+            treatment_type?: string;
+            appointment_start: string;
+            appointment_end: string;
+            status?: "requested" | "confirmed" | "cancelled" | "reschedule_needed";
+            confirmation_reference: string;
+            source?: "ai_call" | "manual" | "dashboard";
+            notes?: string | null;
+            created_by?: string | null;
+            updated_by?: string | null;
+            created_at?: string;
+            updated_at?: string;
+            deleted_at?: string | null;
+          };
+          Update: {
+            id?: string;
+            clinic_id?: string;
+            lead_id?: string | null;
+            call_id?: string | null;
+            booking_request_id?: string | null;
+            patient_name?: string | null;
+            patient_email?: string | null;
+            patient_phone?: string | null;
+            treatment_type?: string;
+            appointment_start?: string;
+            appointment_end?: string;
+            status?: "requested" | "confirmed" | "cancelled" | "reschedule_needed";
+            confirmation_reference?: string;
+            source?: "ai_call" | "manual" | "dashboard";
+            notes?: string | null;
+            created_by?: string | null;
+            updated_by?: string | null;
+            created_at?: string;
+            updated_at?: string;
+            deleted_at?: string | null;
+          };
+          Relationships: [];
+        };
+        missed_call_recovery_workflows: {
         Row: {
           id: string;
           clinic_id: string;
@@ -1362,6 +1431,7 @@ export type PatientLead = Tables<"patient_leads">;
 export type RecoveryWorkflow = Tables<"recovery_workflows">;
 export type MissedCallRecoveryWorkflow = Tables<"missed_call_recovery_workflows">;
 export type BookingRequest = Tables<"booking_requests">;
+export type Appointment = Tables<"appointments">;
 export type SmsEvent = Tables<"sms_events">;
 export type CallRecording = Tables<"call_recordings">;
 export type VoicemailMessage = Tables<"voicemail_messages">;

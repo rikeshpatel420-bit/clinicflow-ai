@@ -57,7 +57,7 @@ const summaryTemplates = {
   patientSummary: "Patient summary pending.",
   receptionNotes: "Reception notes pending.",
   sms: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and I'll call you back.",
-  email: "Thanks for calling ClinicFlow Dental. I've noted your request and we'll be in touch shortly.",
+  email: "Thanks for calling ClinicFlow Dental. We'll be in touch shortly.",
 };
 
 const sharedLeadIntentDefinitions = [
@@ -256,7 +256,7 @@ const voiceIntentDefinitions = [
     intent: "other_unclear" as const,
     label: "Other or unclear",
     keywords: ["other", "unsure", "unknown"],
-    followUpQuestion: "Just give me a little more detail and I’ll help you properly.",
+    followUpQuestion: "Just give me a little more detail and I'll help you properly.",
     priority: 1,
     summaryHint: "Ask a simple clarification question.",
   },
@@ -397,11 +397,11 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       summaryTemplates,
       templates: {
         email: {
-          body: "Thanks for calling ClinicFlow Dental. I've noted your request and we'll be in touch shortly.",
+          body: "Thanks for calling ClinicFlow Dental. We'll be in touch shortly.",
           subject: "ClinicFlow Dental follow-up",
         },
         sms: {
-          help: "Thanks for getting in touch. I've noted that and we'll be in touch shortly.",
+          help: "Thanks for getting in touch. We'll be in touch shortly.",
           missedCallRecovery: summaryTemplates.sms,
           optOut: "You've been opted out of SMS recovery messages. We won't send any more recovery texts.",
           replyYes: "Thanks. I'll call you back shortly.",
@@ -419,9 +419,9 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
     },
     voice: {
       clarificationPrompt: "Could I have a little more detail so I can help properly?",
-      closing: "I have made a note, and I am here if you need anything else.",
+      closing: "Perfect. I'm here if you need anything else.",
       empathy: "Warm, calm, British, reassuring, and never overly cheerful.",
-      emergencyPrompt: "If someone has difficulty breathing or swallowing, advise urgent emergency care and connect them to a human straight away.",
+      emergencyPrompt: "I'm sorry you're dealing with that. If someone has difficulty breathing or swallowing, advise urgent emergency care and connect them to a human straight away.",
       entityDefinitions: [
         { entity: "email", label: "Email", patterns: [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i], normalize: (value) => value.toLowerCase() },
         {
@@ -436,7 +436,7 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       escalationIntents: ["dental_emergency", "complaint"],
       fallbackIntent: "other_unclear",
       fallbackPrompt: "Of course. Could you tell me a little more so I can help properly?",
-      greeting: "Hello, and thank you for calling {{clinicName}}. You're through to ClinicFlow Dental reception. How can I help you today?",
+      greeting: "Good morning, {{clinicName}} reception. How can I help you today?",
       intentDefinitions: voiceIntentDefinitions,
       industryTerminology: ["appointment", "emergency", "reception", "callback", "consultation", "hygiene", "implant", "Invisalign"],
       language: "en-GB",
@@ -445,7 +445,7 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
         { sayAs: "Bupa", term: "Bupa" },
       ],
       speechRate: "96%",
-      ssmlBreakMs: 120,
+      ssmlBreakMs: 80,
       ssmlEnabled: true,
       businessHoursPrompt: "Please route only urgent voice messages outside business hours.",
       summaryTemplates: {
@@ -454,12 +454,12 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       },
       actionDefinitions: treatmentIntentDefinitions,
       templates: {
-        email: {
-          body: "Thanks. We've made a note and we'll be in touch shortly.",
+      email: {
+          body: "Thanks. We'll be in touch shortly.",
           subject: "ClinicFlow Dental call follow-up",
         },
         sms: {
-          help: "Thanks. I've made a note and we'll be in touch shortly.",
+          help: "Thanks. We'll be in touch shortly.",
           missedCallRecovery: "Hi, thanks for calling ClinicFlow Dental. Sorry we missed you. Reply YES and I'll call you back.",
           optOut: "You've been opted out of SMS recovery messages. We won't send any more recovery texts.",
           replyYes: "Thanks. I'll call you back shortly.",
@@ -540,7 +540,9 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       "I can certainly help with that.",
       "I'm sorry you're in pain.",
       "Let's get you to the right clinician.",
-      "Thank you. I've made a note.",
+      "Perfect.",
+      "Done.",
+      "That's booked.",
     ],
   },
   notifications: [

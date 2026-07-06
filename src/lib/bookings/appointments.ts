@@ -3,7 +3,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { bookingRequestSummary, createOrUpdateBookingRequest } from "@/lib/bookings/requests";
 import { getCalendarAvailabilityForClinic, syncCalendarBookingCreation } from "@/lib/integrations/calendar/service";
 import { hashPhoneNumber, normalizePhoneNumber } from "@/lib/twilio/crypto";
+import { getTwilioConnectionForClinic } from "@/lib/twilio/config";
 import { isMissingRelationError, logTwilioDbWriteFailure } from "@/lib/twilio/db-write";
+import { hasConfiguredTwilioSmsSender, sendConfiguredTwilioSms } from "@/lib/twilio/sms";
 
 export type CalendarBookingSource = "ai_call" | "manual" | "dashboard";
 
@@ -38,6 +40,7 @@ type CalendarBookingInput = {
   treatmentType: string;
   updatedByUserId?: string | null;
   workflow?: RecoveryWorkflow | null;
+  forceRequestOnly?: boolean;
 };
 
 export type BookingRequestAppointmentInput = {
@@ -54,6 +57,7 @@ export type BookingRequestAppointmentInput = {
   treatmentType: string;
   updatedByUserId?: string | null;
   workflow?: RecoveryWorkflow | null;
+  forceRequestOnly?: boolean;
 };
 
 function safeSlotSearch(input: BookingScheduleInput) {
@@ -94,7 +98,8 @@ async function recordAppointmentConfirmationSms(input: {
   slotLabel: string;
 }) {
   const admin = createSupabaseAdminClient();
-  const body = `Your appointment request is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}.`;
+  const smsSendingEnabled = hasConfiguredTwilioSmsSender();
+  const body = `Your appointment is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. Reply CANCEL if you need to cancel.`;
   const { error } = await admin.from("sms_events").insert({
     body_preview: body,
     call_id: input.call?.id ?? null,
@@ -103,7 +108,7 @@ async function recordAppointmentConfirmationSms(input: {
     from_number_hash: input.call?.clinic_number ? hashPhoneNumber(input.call.clinic_number) : null,
     lead_id: input.appointment.lead_id ?? input.call?.lead_id ?? null,
     occurred_at: new Date().toISOString(),
-    provider: "manual",
+    provider: smsSendingEnabled ? "twilio" : "manual",
     provider_message_id: `appointment-confirmation-${input.appointment.id}`,
     recovery_workflow_id: null,
     status: "queued",
@@ -118,6 +123,64 @@ async function recordAppointmentConfirmationSms(input: {
       operation: "insert",
       table: "sms_events",
     });
+    return;
+  }
+
+  const { connection } = await getTwilioConnectionForClinic(input.clinicId);
+  if (!connection) {
+    return;
+  }
+
+  if (!hasConfiguredTwilioSmsSender()) {
+    return;
+  }
+
+  const sendResult = await sendConfiguredTwilioSms({
+    connection,
+    body,
+    to: input.patientPhone,
+  });
+
+  if (sendResult.error) {
+    const { error: smsUpdateError } = await admin
+      .from("sms_events")
+      .update({
+        error_message: sendResult.error,
+        status: "failed",
+      })
+      .eq("clinic_id", input.clinicId)
+      .eq("provider_message_id", `appointment-confirmation-${input.appointment.id}`);
+
+    if (smsUpdateError) {
+      logTwilioDbWriteFailure("appointment_confirmation_sms_status_update_failed", smsUpdateError, {
+        appointmentId: input.appointment.id,
+        clinicId: input.clinicId,
+        operation: "update",
+        table: "sms_events",
+      });
+    }
+
+    return;
+  }
+
+  if (sendResult.messageSid) {
+    const { error: smsUpdateError } = await admin
+      .from("sms_events")
+      .update({
+        provider_message_id: sendResult.messageSid,
+        status: "sent",
+      })
+      .eq("clinic_id", input.clinicId)
+      .eq("provider_message_id", `appointment-confirmation-${input.appointment.id}`);
+
+    if (smsUpdateError) {
+      logTwilioDbWriteFailure("appointment_confirmation_sms_status_update_failed", smsUpdateError, {
+        appointmentId: input.appointment.id,
+        clinicId: input.clinicId,
+        operation: "update",
+        table: "sms_events",
+      });
+    }
   }
 }
 
@@ -229,7 +292,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
 
   let appointment: Appointment | null = null;
   let confirmed = false;
-  if (slot) {
+  if (slot && !input.forceRequestOnly) {
     const appointmentPayload: Inserts<"appointments"> = {
       appointment_end: slot.endAt,
       appointment_start: slot.startAt,
@@ -353,7 +416,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
   let appointment: Appointment | null = null;
   let confirmed = false;
 
-  if (slot) {
+  if (slot && !input.forceRequestOnly) {
     const appointmentResult = await admin
       .from("appointments")
       .upsert(

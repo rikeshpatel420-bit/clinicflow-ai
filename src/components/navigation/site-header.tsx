@@ -17,6 +17,7 @@ const publicNav: NavItem[] = [
 const appNav: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/ai", label: "AI Console" },
+  { href: "/reception", label: "Reception" },
   { href: "/knowledge", label: "Knowledge" },
   { href: "/workflows", label: "Workflows" },
   { href: "/patients", label: "Patients" },

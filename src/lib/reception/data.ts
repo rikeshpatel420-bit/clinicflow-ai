@@ -1,5 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import type {
+  Appointment,
+  BookingRequest,
   Call,
   CallRecording,
   CallTranscript,
@@ -98,6 +100,35 @@ export type ReceptionEvent = {
   type: "call" | "sms" | "voicemail" | "workflow";
 };
 
+export type ReceptionQueueKind = "booking_request" | "urgent_enquiry" | "missed_call" | "appointment";
+
+export type ReceptionQueueItem = {
+  appointmentEnd: string | null;
+  appointmentId: string | null;
+  bookingRequestId: string | null;
+  callId: string | null;
+  confirmationReference: string | null;
+  id: string;
+  kind: ReceptionQueueKind;
+  leadId: string | null;
+  nextStep: string | null;
+  patientLabel: string;
+  scheduledAt: string | null;
+  snippet: string;
+  status: string;
+  statusTone: "positive" | "neutral" | "warning";
+  timestamp: string;
+  treatmentType: string;
+  urgencyScore: number;
+};
+
+export type ReceptionQueues = {
+  appointments: ReceptionQueueItem[];
+  bookingRequests: ReceptionQueueItem[];
+  missedCalls: ReceptionQueueItem[];
+  urgentEnquiries: ReceptionQueueItem[];
+};
+
 export type ReceptionConsoleData = {
   clinic: LiveClinic | null;
   currentCall: ReceptionLiveCall | null;
@@ -106,6 +137,7 @@ export type ReceptionConsoleData = {
   metrics: ReceptionMetricCard[];
   missedCallEngine: ReceptionMetricCard[];
   recentEvents: ReceptionEvent[];
+  queues: ReceptionQueues;
   smsThreads: ReceptionSmsThread[];
   source: "demo" | "supabase";
   summary: ReceptionSummaryDraft;
@@ -113,7 +145,9 @@ export type ReceptionConsoleData = {
 };
 
 type LiveSnapshot = {
+  appointments: Appointment[];
   activeCalls: Call[];
+  bookingRequests: BookingRequest[];
   calls: Call[];
   clinic: LiveClinic | null;
   recordings: CallRecording[];
@@ -146,6 +180,52 @@ const demoLiveSnapshot: LiveSnapshot = {
       recovery_status: "sms_sent",
       recovery_next_action: "Waiting for the patient to confirm callback or book online.",
       recovery_updated_at: demoNow,
+      created_at: demoNow,
+      updated_at: demoNow,
+      deleted_at: null,
+    },
+  ],
+  appointments: [
+    {
+      id: "appt-demo-1",
+      clinic_id: demoClinic.id,
+      lead_id: "88888888-8888-4888-8888-888888888882",
+      call_id: "88888888-8888-4888-8888-888888888881",
+      booking_request_id: "booking-demo-1",
+      patient_name: "Sarah Ahmed",
+      patient_email: null,
+      patient_phone: "07123456789",
+      treatment_type: "Treatment enquiry",
+      appointment_start: demoNow,
+      appointment_end: demoNow,
+      status: "confirmed",
+      confirmation_reference: "CF-E084B8",
+      source: "dashboard",
+      notes: "Emergency toothache enquiry. Practice will confirm the exact time shortly.",
+      created_by: null,
+      updated_by: null,
+      created_at: demoNow,
+      updated_at: demoNow,
+      deleted_at: null,
+    },
+  ],
+  bookingRequests: [
+    {
+      id: "booking-demo-1",
+      clinic_id: demoClinic.id,
+      call_id: "88888888-8888-4888-8888-888888888881",
+      lead_id: "88888888-8888-4888-8888-888888888882",
+      patient_id: null,
+      confirmation_reference: "CF-E084B8",
+      source: "voice",
+      booking_type: "treatment enquiry",
+      status: "requested",
+      preferred_time: "03 Jul, 13:30",
+      next_step: "The practice will confirm the exact time shortly.",
+      notes: "Emergency toothache enquiry from Sarah Ahmed.",
+      requested_at: demoNow,
+      created_by: null,
+      updated_by: null,
       created_at: demoNow,
       updated_at: demoNow,
       deleted_at: null,
@@ -358,6 +438,266 @@ function buildIntentDetails(text: string) {
     emergencyKeywords: keywords,
     intent,
     score,
+  };
+}
+
+function summarizeText(value: string | null | undefined, fallback: string) {
+  const text = value?.trim();
+  if (!text) {
+    return fallback;
+  }
+
+  return text.length > 150 ? `${text.slice(0, 147)}...` : text;
+}
+
+function formatLabel(value: string | null | undefined, fallback: string) {
+  const text = value?.trim();
+  if (!text) {
+    return fallback;
+  }
+
+  return text
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatPatientLabel(value: string | null | undefined, fallback: string) {
+  const text = value?.trim();
+  if (!text) {
+    return fallback;
+  }
+
+  const label = text.split(":")[0]?.trim() ?? text;
+  return label.length > 80 ? `${label.slice(0, 77)}...` : label;
+}
+
+function queueTone(status: string, urgencyScore: number): "positive" | "neutral" | "warning" {
+  const lower = status.toLowerCase();
+
+  if (lower.includes("lost") || lower.includes("failed") || lower.includes("cancelled")) {
+    return "warning";
+  }
+
+  if (urgencyScore >= 85 || lower.includes("urgent")) {
+    return "warning";
+  }
+
+  if (lower.includes("confirmed") || lower.includes("recovered") || lower.includes("contacted")) {
+    return "positive";
+  }
+
+  return "neutral";
+}
+
+function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
+  const leadById = new Map(input.leads.map((lead) => [lead.id, lead]));
+  const callById = new Map(input.calls.map((call) => [call.id, call]));
+  const transcriptByCallId = new Map<string, CallTranscript>();
+  const voicemailByCallId = new Map<string, VoicemailMessage>();
+  const bookingRequestByCallId = new Map<string, BookingRequest>();
+  const bookingRequestByLeadId = new Map<string, BookingRequest>();
+  const appointmentByCallId = new Map<string, Appointment>();
+  const appointmentByBookingRequestId = new Map<string, Appointment>();
+
+  for (const transcript of input.transcripts) {
+    if (transcript.call_id && !transcriptByCallId.has(transcript.call_id)) {
+      transcriptByCallId.set(transcript.call_id, transcript);
+    }
+  }
+
+  for (const voicemail of input.voicemails) {
+    if (voicemail.call_id && !voicemailByCallId.has(voicemail.call_id)) {
+      voicemailByCallId.set(voicemail.call_id, voicemail);
+    }
+  }
+
+  for (const bookingRequest of input.bookingRequests) {
+    if (bookingRequest.call_id && !bookingRequestByCallId.has(bookingRequest.call_id)) {
+      bookingRequestByCallId.set(bookingRequest.call_id, bookingRequest);
+    }
+    if (bookingRequest.lead_id && !bookingRequestByLeadId.has(bookingRequest.lead_id)) {
+      bookingRequestByLeadId.set(bookingRequest.lead_id, bookingRequest);
+    }
+  }
+
+  for (const appointment of input.appointments) {
+    if (appointment.call_id && !appointmentByCallId.has(appointment.call_id)) {
+      appointmentByCallId.set(appointment.call_id, appointment);
+    }
+    if (appointment.booking_request_id && !appointmentByBookingRequestId.has(appointment.booking_request_id)) {
+      appointmentByBookingRequestId.set(appointment.booking_request_id, appointment);
+    }
+  }
+
+  const bookingRequests = input.bookingRequests
+    .filter((request) => request.status === "requested")
+    .map((request): ReceptionQueueItem => {
+      const lead = request.lead_id ? leadById.get(request.lead_id) ?? null : null;
+      const call = request.call_id ? callById.get(request.call_id) ?? null : null;
+      const transcript = request.call_id ? transcriptByCallId.get(request.call_id) ?? null : null;
+      const appointment = appointmentByBookingRequestId.get(request.id) ?? null;
+      const sourceText = [lead?.enquiry_summary, request.next_step, request.notes, transcript?.summary, transcript?.transcript_text].filter(Boolean).join(" ");
+      const voiceIntent = classifyIntent(sourceText || request.booking_type);
+      const urgencyScore = lead?.lead_score ?? scoreLead(voiceIntent as EnquiryCategory, 18, 180);
+      const statusTone = queueTone(request.status, urgencyScore);
+
+      return {
+        appointmentEnd: appointment?.appointment_end ?? null,
+        appointmentId: appointment?.id ?? null,
+        bookingRequestId: request.id,
+        callId: request.call_id,
+        confirmationReference: appointment?.confirmation_reference ?? request.confirmation_reference,
+        id: request.id,
+        kind: "booking_request",
+        leadId: request.lead_id,
+        nextStep: request.next_step,
+        patientLabel: formatPatientLabel(
+          lead?.enquiry_summary ?? (call?.caller_number_last4 ? `Caller ending ${call.caller_number_last4}` : null),
+          `Booking request ${request.confirmation_reference}`,
+        ),
+        scheduledAt: appointment?.appointment_start ?? null,
+        snippet: summarizeText(
+          request.next_step ?? request.notes ?? transcript?.summary ?? transcript?.transcript_text ?? lead?.enquiry_summary,
+          "Booking request captured from the call.",
+        ),
+        status: request.status,
+        statusTone,
+        timestamp: request.requested_at ?? request.updated_at,
+        treatmentType: formatLabel(request.booking_type, "Booking request"),
+        urgencyScore: Math.min(100, Math.max(30, urgencyScore)),
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const urgentEnquiries = input.leads
+    .filter((lead) => {
+      const text = `${lead.enquiry_summary ?? ""} ${lead.priority}`.toLowerCase();
+      return lead.priority === "urgent" || lead.priority === "high" || lead.lead_score >= 80 || /emergency|urgent|pain|swelling|bleeding|same day/.test(text);
+    })
+    .map((lead): ReceptionQueueItem => {
+      const relatedCall = input.calls.find((call) => call.lead_id === lead.id) ?? null;
+      const transcript = relatedCall?.id ? transcriptByCallId.get(relatedCall.id) ?? null : null;
+      const bookingRequest = bookingRequestByLeadId.get(lead.id) ?? null;
+      const appointment = bookingRequest ? appointmentByBookingRequestId.get(bookingRequest.id) ?? null : input.appointments.find((item) => item.lead_id === lead.id && item.status === "confirmed") ?? null;
+      const sourceText = [lead.enquiry_summary, transcript?.summary, transcript?.transcript_text, bookingRequest?.next_step, appointment?.notes].filter(Boolean).join(" ");
+      const voiceIntent = classifyIntent(sourceText || "Urgent enquiry");
+      const urgencyScore = Math.max(
+        lead.lead_score,
+        scoreLead(voiceIntent as EnquiryCategory, 18, 180),
+      );
+      const statusTone = queueTone(lead.status, urgencyScore);
+
+      return {
+        appointmentEnd: appointment?.appointment_end ?? null,
+        appointmentId: appointment?.id ?? null,
+        bookingRequestId: bookingRequest?.id ?? null,
+        callId: relatedCall?.id ?? null,
+        confirmationReference: appointment?.confirmation_reference ?? bookingRequest?.confirmation_reference ?? null,
+        id: lead.id,
+        kind: "urgent_enquiry",
+        leadId: lead.id,
+        nextStep: bookingRequest?.next_step ?? null,
+        patientLabel: formatPatientLabel(lead.enquiry_summary, `Lead ${lead.id.slice(0, 8)}`),
+        scheduledAt: appointment?.appointment_start ?? null,
+        snippet: summarizeText(
+          lead.enquiry_summary ?? transcript?.summary ?? transcript?.transcript_text ?? bookingRequest?.next_step,
+          "Urgent enquiry captured from the call.",
+        ),
+        status: lead.status,
+        statusTone,
+        timestamp: lead.updated_at,
+        treatmentType: formatLabel(lead.source, "Urgent enquiry"),
+        urgencyScore: Math.min(100, Math.max(35, urgencyScore)),
+      };
+    })
+    .sort((a, b) => b.urgencyScore - a.urgencyScore || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const missedCalls = input.calls
+    .filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status) && !["booked", "recovered", "closed"].includes(call.recovery_status))
+    .map((call): ReceptionQueueItem => {
+      const lead = call.lead_id ? leadById.get(call.lead_id) ?? null : null;
+      const transcript = transcriptByCallId.get(call.id) ?? null;
+      const voicemail = voicemailByCallId.get(call.id) ?? null;
+      const bookingRequest = bookingRequestByCallId.get(call.id) ?? null;
+      const appointment = bookingRequest ? appointmentByBookingRequestId.get(bookingRequest.id) ?? null : appointmentByCallId.get(call.id) ?? null;
+      const sourceText = [lead?.enquiry_summary, transcript?.summary, transcript?.transcript_text, voicemail?.summary, voicemail?.transcript_text, call.recovery_next_action]
+        .filter(Boolean)
+        .join(" ");
+      const voiceIntent = classifyIntent(sourceText || "Missed call");
+      const urgencyScore = lead?.lead_score ?? scoreLead(voiceIntent as EnquiryCategory, 18, 180);
+      const statusTone = queueTone(call.recovery_status ?? call.status, urgencyScore);
+
+      return {
+        appointmentEnd: appointment?.appointment_end ?? null,
+        appointmentId: appointment?.id ?? null,
+        bookingRequestId: bookingRequest?.id ?? null,
+        callId: call.id,
+        confirmationReference: appointment?.confirmation_reference ?? bookingRequest?.confirmation_reference ?? null,
+        id: call.id,
+        kind: "missed_call",
+        leadId: lead?.id ?? null,
+        nextStep: call.recovery_next_action,
+        patientLabel: formatPatientLabel(lead?.enquiry_summary ?? (call.caller_number_last4 ? `Caller ending ${call.caller_number_last4}` : null), `Call ${call.id.slice(0, 8)}`),
+        scheduledAt: appointment?.appointment_start ?? null,
+        snippet: summarizeText(
+          transcript?.summary ?? transcript?.transcript_text ?? voicemail?.summary ?? voicemail?.transcript_text ?? call.recovery_next_action,
+          "Missed call queued for follow-up.",
+        ),
+        status: call.recovery_status ?? call.status,
+        statusTone,
+        timestamp: call.updated_at,
+        treatmentType: lead?.source === "missed_call" ? "Missed call recovery" : formatLabel(call.status, "Call follow-up"),
+        urgencyScore: Math.min(100, Math.max(25, urgencyScore)),
+      };
+    })
+    .sort((a, b) => b.urgencyScore - a.urgencyScore || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const appointments = input.appointments
+    .filter((appointment) => appointment.status === "confirmed" && new Date(appointment.appointment_start).getTime() >= todayStart.getTime())
+    .map((appointment): ReceptionQueueItem => {
+      const lead = appointment.lead_id ? leadById.get(appointment.lead_id) ?? null : null;
+      const bookingRequest = appointment.booking_request_id ? input.bookingRequests.find((item) => item.id === appointment.booking_request_id) ?? null : null;
+      const call = appointment.call_id ? callById.get(appointment.call_id) ?? null : null;
+      const transcript = call?.id ? transcriptByCallId.get(call.id) ?? null : null;
+      const sourceText = [appointment.notes, bookingRequest?.notes, transcript?.summary, transcript?.transcript_text].filter(Boolean).join(" ");
+      const voiceIntent = classifyIntent(sourceText || appointment.treatment_type);
+      const urgencyScore = lead?.lead_score ?? scoreLead(voiceIntent as EnquiryCategory, 18, 180);
+      const statusTone = queueTone(appointment.status, urgencyScore);
+
+      return {
+        appointmentEnd: appointment.appointment_end,
+        appointmentId: appointment.id,
+        bookingRequestId: appointment.booking_request_id,
+        callId: appointment.call_id,
+        confirmationReference: appointment.confirmation_reference,
+        id: appointment.id,
+        kind: "appointment",
+        leadId: appointment.lead_id,
+        nextStep: bookingRequest?.next_step ?? appointment.notes,
+        patientLabel: formatPatientLabel(appointment.patient_name ?? lead?.enquiry_summary ?? null, `Appointment ${appointment.confirmation_reference}`),
+        scheduledAt: appointment.appointment_start,
+        snippet: summarizeText(
+          appointment.notes ?? bookingRequest?.next_step ?? transcript?.summary ?? transcript?.transcript_text,
+          "Confirmed appointment ready for the diary.",
+        ),
+        status: appointment.status,
+        statusTone,
+        timestamp: appointment.appointment_start,
+        treatmentType: formatLabel(appointment.treatment_type, "Confirmed appointment"),
+        urgencyScore: Math.min(100, Math.max(20, urgencyScore)),
+      };
+    })
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  return {
+    appointments,
+    bookingRequests,
+    missedCalls,
+    urgentEnquiries,
   };
 }
 
@@ -686,6 +1026,7 @@ function buildSnapshot(input: LiveSnapshot, source: "demo" | "supabase" = "supab
     metrics: buildMetrics(input.snapshot, input),
     missedCallEngine: buildMissedCallEngine(input),
     recentEvents: buildEvents(input.calls, input.smsEvents, input.voicemails, input.workflows),
+    queues: buildReceptionQueues(input),
     smsThreads: buildSmsThreads(input.smsEvents, input.leads),
     source,
     summary,
@@ -702,6 +1043,12 @@ function emptySnapshot(error: string): ReceptionConsoleData {
     metrics: [],
     missedCallEngine: [],
     recentEvents: [],
+    queues: {
+      appointments: [],
+      bookingRequests: [],
+      missedCalls: [],
+      urgentEnquiries: [],
+    },
     smsThreads: [],
     source: "demo",
     summary: {
@@ -740,6 +1087,8 @@ export async function getReceptionConsoleData(user: Pick<User, "email" | "id" | 
   const [
     { data: clinic },
     { data: snapshot },
+    { data: appointments },
+    { data: bookingRequests },
     { data: calls },
     { data: leads },
     { data: smsEvents },
@@ -756,6 +1105,22 @@ export async function getReceptionConsoleData(user: Pick<User, "email" | "id" | 
       .order("period_end", { ascending: false })
       .limit(1)
       .maybeSingle<DashboardMetricSnapshot>(),
+    supabase
+      .from("appointments")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("appointment_start", { ascending: false })
+      .limit(30)
+      .returns<Appointment[]>(),
+    supabase
+      .from("booking_requests")
+      .select("*")
+      .eq("clinic_id", membership.clinic_id)
+      .is("deleted_at", null)
+      .order("requested_at", { ascending: false })
+      .limit(30)
+      .returns<BookingRequest[]>(),
     supabase
       .from("calls")
       .select("*")
@@ -815,6 +1180,8 @@ export async function getReceptionConsoleData(user: Pick<User, "email" | "id" | 
 
   const liveSnapshot: LiveSnapshot = {
     activeCalls: (calls ?? []).filter((call) => call.status === "answered" && !call.ended_at).slice(0, 1),
+    appointments: appointments ?? [],
+    bookingRequests: bookingRequests ?? [],
     calls: calls ?? [],
     clinic: clinic ?? null,
     recordings: recordings ?? [],

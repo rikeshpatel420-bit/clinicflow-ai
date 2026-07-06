@@ -44,10 +44,10 @@ export const providerRegistry: ProviderDefinition[] = [
     supportedObjects: ["calendars", "events", "availability"],
   },
   {
-    key: "microsoft_365",
-    name: "Microsoft 365",
+    key: "microsoft_outlook",
+    name: "Microsoft Outlook",
     category: "calendar",
-    description: "Microsoft 365 placeholder for Outlook calendars, mailboxes, and staff scheduling.",
+    description: "Microsoft Outlook calendar adapter for calendars, mailboxes, and staff scheduling.",
     supportedObjects: ["calendars", "mailboxes", "availability"],
   },
   {

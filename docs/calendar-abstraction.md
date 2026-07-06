@@ -2,13 +2,22 @@
 
 The calendar abstraction keeps booking logic provider-neutral.
 
-## Supported configuration
+## Supported providers
 
-- manual booking
+- Dentally
+- Software of Excellence
+- Exact
 - Google Calendar
-- Microsoft 365 Calendar
-- practice-management calendar
-- receptionist-managed callback queues
+- Microsoft Outlook
+
+## Common API
+
+Every connector exposes the same operations:
+
+- `getAvailability()`
+- `createBooking()`
+- `updateBooking()`
+- `cancelBooking()`
 
 ## Responsibilities
 
@@ -16,12 +25,12 @@ The calendar abstraction keeps booking logic provider-neutral.
 - define the provider choice
 - capture appointment preferences
 - keep follow-up behaviour consistent
+- keep the booking queue usable when a connector is mocked or unavailable
 
 ## Why it exists
 
-Different Flow products may use different scheduling providers, but the workflow engine should not care which one is underneath.
+Different Flow products may use different scheduling providers, but the workflow engine should not care which one is underneath. The application can switch from practice-management sync to calendar-only scheduling without changing the booking flow.
 
 ## Practical rule
 
-If a provider is unavailable, the platform should keep the request in a booking queue and let the team confirm manually.
-
+If a provider is unavailable, the platform keeps the request in the booking queue, writes the appointment record safely, and lets the team confirm manually.

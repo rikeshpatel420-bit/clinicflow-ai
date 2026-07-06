@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { confirmCalendarBookingRequest } from "@/lib/bookings/appointments";
+import { syncCalendarBookingCancellation, syncCalendarBookingUpdate } from "@/lib/integrations/calendar/service";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/server";
 import type { Appointment, BookingRequest, Call, Patient, PatientLead, RecoveryWorkflow } from "@/types/database";
@@ -201,6 +202,16 @@ export async function cancelAppointmentAction(formData: FormData) {
     .eq("id", appointment.id)
     .eq("clinic_id", membership.clinic_id);
 
+  await syncCalendarBookingCancellation({
+    appointment,
+    bookingRequest: null,
+    clinicId: membership.clinic_id,
+    notes: "Cancelled from the calendar dashboard.",
+    reason: "dashboard_cancelled",
+    source: "dashboard",
+    treatmentType: appointment.treatment_type,
+  });
+
   if (appointment.booking_request_id) {
     await admin
       .from("booking_requests")
@@ -253,6 +264,16 @@ export async function markAppointmentRescheduleNeededAction(formData: FormData) 
     })
     .eq("id", appointment.id)
     .eq("clinic_id", membership.clinic_id);
+
+  await syncCalendarBookingUpdate({
+    appointment,
+    bookingRequest: null,
+    clinicId: membership.clinic_id,
+    notes: "Reschedule needed from the calendar dashboard.",
+    reason: "dashboard_reschedule_needed",
+    source: "dashboard",
+    treatmentType: appointment.treatment_type,
+  });
 
   if (appointment.booking_request_id) {
     await admin

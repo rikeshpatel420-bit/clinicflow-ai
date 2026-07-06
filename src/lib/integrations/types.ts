@@ -5,7 +5,7 @@ export type ProviderKey =
   | "hubspot"
   | "twilio"
   | "google_calendar"
-  | "microsoft_365"
+  | "microsoft_outlook"
   | "email"
   | "whatsapp"
   | "stripe"

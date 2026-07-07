@@ -159,11 +159,13 @@ export default async function TwilioIntegrationPage({
               { label: "Twilio", value: connection?.status === "active" ? "Configured" : "Not configured" },
               { label: "Voice webhook", value: health.statuses.voiceWebhook === "ready" ? "Configured" : "Not configured" },
               { label: "SMS webhook", value: health.statuses.smsWebhook === "ready" ? "Configured" : "Not configured" },
+              { label: "SMS sending/logging", value: health.indicators.smsWorking ? "Configured" : "Not configured" },
+              { label: "WhatsApp", value: health.indicators.whatsappReady ? "Configured" : "Available, not configured" },
               { label: "Status callback", value: health.statuses.statusWebhook === "ready" ? "Configured" : "Not configured" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between gap-3 rounded-2xl border border-[#edf2f0] bg-[#fbfdfc] px-4 py-3">
                 <span className="text-sm font-medium text-[#394642]">{item.label}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.value === "Configured" ? "bg-[#e8f8f4] text-[#087968]" : "bg-[#fff7f2] text-[#9a3412]"}`}>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.value === "Configured" ? "bg-[#e8f8f4] text-[#087968]" : item.value === "Available, not configured" ? "bg-[#f7faf9] text-[#52615d]" : "bg-[#fff7f2] text-[#9a3412]"}`}>
                   {item.value}
                 </span>
               </div>

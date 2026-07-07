@@ -60,6 +60,21 @@ function containsAny(text: string, keywords: string[]) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
+function extractPreferredAppointmentPhrase(text: string) {
+  const normalized = normalizeText(text);
+  const weekdayPattern = "\\b(?:next\\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b";
+  const datePattern = "\\b\\d{1,2}(?:st|nd|rd|th)?(?:\\s+of)?\\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\\b";
+  const timePattern = "\\b(?:morning|afternoon|evening|lunchtime|noon|after school|after lunch|around\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?|\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)|\\d{1,2}\\s*o'clock)\\b";
+  const match = normalized.match(new RegExp(`(${weekdayPattern}|${datePattern})(?:[^.?!]{0,80}${timePattern})?`, "i"));
+
+  if (match?.[0]) {
+    return match[0].trim();
+  }
+
+  const timeOnly = normalized.match(new RegExp(timePattern, "i"));
+  return timeOnly?.[0]?.trim() ?? null;
+}
+
 function titleCase(value: string) {
   return value
     .split(/[_\s-]+/)
@@ -125,6 +140,7 @@ export function extractVoiceCaptureDetails(text: string): VoiceCaptureDetails {
   const value = lower(text);
   const emergencyFlags = detectEmergencyFlags(text);
   const extracted = voiceConversationEngine.extractEntities(text).entities;
+  const preferredAppointmentTime = extracted.preferredAppointmentTime ?? extractPreferredAppointmentPhrase(text);
 
   return {
     breathingOrSwallowingIssue: emergencyFlags.includes("breathing_or_swallowing"),
@@ -136,9 +152,9 @@ export function extractVoiceCaptureDetails(text: string): VoiceCaptureDetails {
     hasTrauma: emergencyFlags.includes("trauma"),
     mobileNumber: extracted.mobileNumber ?? null,
     nhsPrivatePreference: value.includes("nhs") ? "nhs" : value.includes("private") ? "private" : null,
-    preferredAppointmentTime: extracted.preferredAppointmentTime ?? null,
+    preferredAppointmentTime,
     reason: normalized,
-    requestedDateTime: extracted.preferredAppointmentTime ?? null,
+    requestedDateTime: preferredAppointmentTime,
     wantsHuman: containsAny(value, humanKeywords),
   };
 }
@@ -211,28 +227,32 @@ export function buildVoiceTranscriptSummary(input: {
 }
 
 export function resolveUkTimeGreeting(now = new Date()) {
-  const londonHour = Number.parseInt(
-    new Intl.DateTimeFormat("en-GB", {
+  const hourPart = new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
-      hour12: false,
+      hourCycle: "h23",
       timeZone: "Europe/London",
-    }).format(now),
-    10,
-  );
+    })
+    .formatToParts(now)
+    .find((part) => part.type === "hour")?.value;
+  const londonHour = Number.parseInt(hourPart ?? "", 10) % 24;
 
   if (Number.isNaN(londonHour)) {
     return "Hello";
   }
 
-  if (londonHour < 12) {
+  if (londonHour >= 5 && londonHour < 12) {
     return "Good morning";
   }
 
-  if (londonHour < 18) {
+  if (londonHour >= 12 && londonHour < 18) {
     return "Good afternoon";
   }
 
-  return "Good evening";
+  if (londonHour >= 18 && londonHour <= 22) {
+    return "Good evening";
+  }
+
+  return "Hello";
 }
 
 export function buildVoiceGreetingMessage(clinicName: string, now = new Date()) {

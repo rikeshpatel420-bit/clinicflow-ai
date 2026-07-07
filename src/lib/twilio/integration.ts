@@ -125,6 +125,30 @@ function includesTimePreference(text: string) {
   return /\b(morning|afternoon|evening|lunchtime|noon|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i.test(text);
 }
 
+function includesDayPreference(text: string) {
+  return /\b(today|tomorrow|next\s+week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?:st|nd|rd|th)?(?:\s+of)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december))\b/i.test(text);
+}
+
+function isRoutineSpeechText(text: string) {
+  return /\b(routine|non[-\s]?urgent|check[-\s]?up|checkup|hygiene|regular|standard)\b/i.test(text);
+}
+
+function isUrgentSpeechText(text: string) {
+  return /\b(urgent|emergency|same day|today|severe pain|swelling|bleeding|trauma|difficulty breathing|difficulty swallowing|trouble swallowing|trouble breathing)\b/i.test(text);
+}
+
+function inferBookingKindFromSpeech(input: { details: VoiceCaptureDetails; intent: VoiceIntent; text: string }) {
+  if (input.details.breathingOrSwallowingIssue || input.intent === "dental_emergency" || isUrgentSpeechText(input.text)) {
+    return "urgent";
+  }
+
+  if (isRoutineSpeechText(input.text)) {
+    return "routine";
+  }
+
+  return null;
+}
+
 function buildVoiceBookingTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string; actionUrl: string; promptText: string }) {
   const actionUrl = escapeXml(input.actionUrl);
 
@@ -1165,11 +1189,13 @@ async function upsertVoiceTriageArtifacts(input: {
   let appointment: Appointment | null = null;
   let bookingConfirmed = false;
   let bookingSlotLabel: string | null = null;
+  let smsConfirmationStatus: "not_attempted" | "logged" | "sent" | "failed" = "not_attempted";
   if (bookingRequested) {
     const bookingResult = await bookCalendarAppointment({
       bookingType: input.intent,
       call: input.call,
       clinicId: input.connection.clinic_id,
+      clinicName: input.clinicName,
       createdByUserId: input.connection.created_by,
       emergency: input.intent === "dental_emergency" || input.details.breathingOrSwallowingIssue,
       lead,
@@ -1195,6 +1221,7 @@ async function upsertVoiceTriageArtifacts(input: {
       appointment = bookingResult.appointment;
       bookingConfirmed = bookingResult.confirmed;
       bookingSlotLabel = bookingResult.slot?.label ?? null;
+      smsConfirmationStatus = bookingResult.smsConfirmation.status;
     }
   }
 
@@ -1247,6 +1274,7 @@ async function upsertVoiceTriageArtifacts(input: {
       transcript: transcript ?? null,
       updatedCall: fallbackUpdatedCall,
       workflow: workflowResult.data ?? existingWorkflow.data ?? null,
+      smsConfirmationStatus,
       urgency,
     };
   }
@@ -1260,6 +1288,7 @@ async function upsertVoiceTriageArtifacts(input: {
     transcript: transcript ?? null,
     workflow: workflowResult.data ?? existingWorkflow.data ?? null,
     updatedCall: updatedCall ?? input.call,
+    smsConfirmationStatus,
     urgency,
   };
 }
@@ -1340,11 +1369,17 @@ function voiceCompletionResponseText(input: {
   bookingConfirmed?: boolean;
   bookingReference?: string | null;
   appointmentLabel?: string | null;
-  smsConfirmationExpected?: boolean;
+  smsConfirmationStatus?: "not_attempted" | "logged" | "sent" | "failed" | null;
   treatmentType: ReturnType<typeof classifyTreatmentType>;
 }) {
+  const smsLine =
+    input.bookingConfirmed && input.smsConfirmationStatus === "sent"
+      ? " Your confirmation text has been sent."
+      : input.bookingConfirmed && (input.smsConfirmationStatus === "failed" || input.smsConfirmationStatus === "logged")
+        ? ` Your appointment is still booked. Your reference is ${input.bookingReference ?? "the practice reference"}. Our text confirmation service is temporarily unavailable.`
+        : "";
   const bookingLine = input.bookingConfirmed
-    ? `You're booked for ${input.appointmentLabel ?? "the next available slot"}. Your reference is ${input.bookingReference ?? "the practice reference"}.${input.smsConfirmationExpected ? " A text confirmation is on its way." : ""}`
+    ? `Perfect, you're booked in for ${input.appointmentLabel ?? "the next available slot"} with ${input.clinicName}. Your booking reference is ${input.bookingReference ?? "the practice reference"}.${smsLine}`
     : input.bookingReference
       ? `Perfect. Your appointment request is in. The practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
       : `I can take the details now. If the diary is connected, I'll offer a time. If not, the practice will confirm by text or phone.`;
@@ -1819,6 +1854,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       bookingType: bookingIntent ?? "appointment_request",
       call: processingResult.call,
       clinicId: auth.connection.clinic_id,
+      clinicName,
       createdByUserId: auth.connection.created_by,
       emergency: bookingStageLabel(bookingContext) === "urgent" || bookingIntent === "dental_emergency",
       lead: null,
@@ -1848,7 +1884,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       bookingReference: bookingResult.bookingRequest?.confirmation_reference ?? null,
       details,
       intent: bookingIntent,
-      smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
+      smsConfirmationStatus: bookingResult.smsConfirmation.status,
       treatmentType,
     });
 
@@ -1956,23 +1992,156 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   });
 
   const freshBookingRequest = Boolean(latestBookingIntent && isBookingSpeechText(speechText));
+  const buildSlotOfferOrRequestResponse = async (input: {
+    emergency: boolean;
+    logStage: string;
+    notes: Array<string | null>;
+    preferredTimeText: string;
+    treatmentTypeOverride?: string;
+  }) => {
+    const slot = await findNextAvailableAppointmentSlot({
+      clinicId: auth.connection.clinic_id,
+      emergency: input.emergency,
+      preferredTimeText: input.preferredTimeText,
+    });
+
+    if (!slot) {
+      const bookingResult = await bookCalendarAppointment({
+        bookingType: bookingIntent ?? "appointment_request",
+        call: processingResult.call,
+        clinicId: auth.connection.clinic_id,
+        clinicName,
+        createdByUserId: auth.connection.created_by,
+        emergency: input.emergency,
+        lead: null,
+        nextStep: "The practice will confirm the exact time shortly.",
+        notes: input.notes.filter(Boolean).join(" "),
+        patient: null,
+        patientPhoneOverride: normalizePhoneNumber(details.mobileNumber || auth.payload.From || null),
+        preferredTime: input.preferredTimeText,
+        source: "ai_call",
+        treatmentType: input.treatmentTypeOverride ?? (input.emergency ? "emergency" : "general"),
+        updatedByUserId: auth.connection.created_by,
+        workflow: null,
+        forceRequestOnly: true,
+      });
+
+      const followUpResponseText = voiceCompletionResponseText({
+        clinicName: clinicName ?? "ClinicFlow clinic",
+        appointmentLabel: null,
+        bookingConfirmed: false,
+        bookingReference: bookingResult.bookingRequest?.confirmation_reference ?? null,
+        details,
+        intent: bookingIntent ?? intent,
+        smsConfirmationStatus: bookingResult.smsConfirmation.status,
+        treatmentType,
+      });
+
+      await recordVoiceSpeechTurn({
+        assistantResponseText: followUpResponseText,
+        clinicId: auth.connection.clinic_id,
+        eventType: "twilio.voice_speech.completed",
+        idempotencyKey: stageEventId,
+        payload: auth.payload,
+        processingStatus: "processed",
+        providerEventId: auth.payload.CallSid ?? null,
+        receivedAt,
+        stage: input.logStage,
+      });
+
+      return new Response(
+        buildVoiceWrapUpTwiml({
+          clinicName,
+          followUpUrl: `${buildWebhookBaseUrl(request)}/api/webhooks/twilio/voice/speech?stage=wrap-up`,
+          responseText: followUpResponseText,
+        }),
+        {
+          headers: {
+            "Content-Type": "text/xml",
+            "X-ClinicFlow-Processed": "true",
+            "X-ClinicFlow-Test-Mode": String(auth.testMode),
+          },
+          status: 200,
+        },
+      );
+    }
+
+    const offerUrl = buildSpeechActionUrl({
+      params: {
+        bookingDay: bookingContext.bookingDay ?? input.preferredTimeText,
+        bookingIntent,
+        bookingKind: input.emergency ? "urgent" : "routine",
+        bookingOfferAvailable: "true",
+        bookingOfferLabel: slot.label,
+        bookingTime: bookingContext.bookingTime,
+      },
+      request,
+      stage: "booking-confirm",
+    });
+
+    const offerText = `Let me check that. I can offer ${slot.label}. Would you like me to book that for you?`;
+    await recordVoiceSpeechTurn({
+      assistantResponseText: offerText,
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.triaged",
+      idempotencyKey: stageEventId,
+      payload: auth.payload,
+      processingStatus: "processed",
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+      stage: input.logStage,
+    });
+
+    return new Response(
+      buildVoiceBookingOfferTwiml({
+        actionUrl: offerUrl,
+        callerId,
+        clinicName,
+        forwardToNumber,
+        offerText,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  };
+
   if (stage === "booking-day" || ((stage === "wrap-up" || stage === "triage" || stage === "collect-details") && freshBookingRequest)) {
     const providedDateTime = stage === "booking-day" || freshBookingRequest ? normalizeSpeechText(speechText) : details.preferredAppointmentTime;
-    const hasDateAndTime = Boolean(providedDateTime && includesTimePreference(providedDateTime));
-    const nextStage = hasDateAndTime ? "booking-kind" : stage === "booking-day" ? "booking-time" : "booking-day";
+    const hasDay = Boolean(providedDateTime && includesDayPreference(providedDateTime));
+    const hasTime = Boolean(providedDateTime && includesTimePreference(providedDateTime));
+    const inferredKind = inferBookingKindFromSpeech({ details, intent: bookingIntent ?? intent, text: speechText });
+
+    if (providedDateTime && hasDay && hasTime && inferredKind) {
+      return buildSlotOfferOrRequestResponse({
+        emergency: inferredKind === "urgent",
+        logStage: stage,
+        notes: [`Preferred day and time: ${providedDateTime}`, `Urgency: ${inferredKind}`, `Caller said: ${speechText}`],
+        preferredTimeText: providedDateTime,
+        treatmentTypeOverride: inferredKind === "urgent" ? "emergency" : treatmentType,
+      });
+    }
+
+    const nextStage = hasDay && hasTime ? "booking-kind" : hasDay ? "booking-time" : "booking-day";
     const nextUrl = buildSpeechActionUrl({
       params: {
         bookingDay: providedDateTime ?? null,
         bookingIntent,
+        bookingKind: inferredKind,
       },
       request,
       stage: nextStage,
     });
 
-    const responseText = hasDateAndTime
+    const responseText = hasDay && hasTime
       ? "Certainly. Is this urgent, or routine?"
-      : stage === "booking-day"
-        ? "Of course. What time works best?"
+      : hasDay
+        ? "Perfect. What time works best?"
         : "Certainly. Which day works best for you?";
     await recordVoiceSpeechTurn({
       assistantResponseText: responseText,
@@ -2006,6 +2175,24 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   }
 
   if (stage === "booking-time") {
+    const combinedPreference = [bookingContext.bookingDay, normalizeSpeechText(speechText)].filter(Boolean).join(" ");
+    const inferredKind = inferBookingKindFromSpeech({ details, intent: bookingIntent ?? intent, text: combinedPreference });
+
+    if (inferredKind) {
+      return buildSlotOfferOrRequestResponse({
+        emergency: inferredKind === "urgent",
+        logStage: stage,
+        notes: [
+          bookingContext.bookingDay ? `Preferred day: ${bookingContext.bookingDay}` : null,
+          `Preferred time: ${normalizeSpeechText(speechText)}`,
+          `Urgency: ${inferredKind}`,
+          `Caller said: ${speechText}`,
+        ],
+        preferredTimeText: combinedPreference,
+        treatmentTypeOverride: inferredKind === "urgent" ? "emergency" : treatmentType,
+      });
+    }
+
     const nextUrl = buildSpeechActionUrl({
       params: {
         bookingDay: bookingContext.bookingDay,
@@ -2050,121 +2237,20 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
 
   if (stage === "booking-kind") {
     const preferredTimeText = bookingStagePreferredTime(bookingContext) ?? normalizeSpeechText(speechText);
-    const emergency = /urgent|emergency/i.test(speechText) || bookingStageLabel(bookingContext) === "urgent" || bookingIntent === "dental_emergency";
-    const slot = await findNextAvailableAppointmentSlot({
-      clinicId: auth.connection.clinic_id,
+    const emergency = isUrgentSpeechText(speechText) || bookingStageLabel(bookingContext) === "urgent" || bookingIntent === "dental_emergency";
+
+    return buildSlotOfferOrRequestResponse({
       emergency,
+      logStage: stage,
+      notes: [
+        bookingContext.bookingDay ? `Preferred day: ${bookingContext.bookingDay}` : null,
+        bookingContext.bookingTime ? `Preferred time: ${bookingContext.bookingTime}` : null,
+        `Urgency: ${normalizeSpeechText(speechText)}`,
+        `Caller said: ${speechText}`,
+      ],
       preferredTimeText,
+      treatmentTypeOverride: emergency ? "emergency" : treatmentType,
     });
-
-    if (!slot) {
-      const bookingResult = await bookCalendarAppointment({
-        bookingType: bookingIntent ?? "appointment_request",
-        call: processingResult.call,
-        clinicId: auth.connection.clinic_id,
-        createdByUserId: auth.connection.created_by,
-        emergency,
-        lead: null,
-        nextStep: "The practice will confirm the exact time shortly.",
-        notes: [
-          bookingContext.bookingDay ? `Preferred day: ${bookingContext.bookingDay}` : null,
-          bookingContext.bookingTime ? `Preferred time: ${bookingContext.bookingTime}` : null,
-          `Urgency: ${normalizeSpeechText(speechText)}`,
-        ]
-          .filter(Boolean)
-          .join(" "),
-        patient: null,
-        patientPhoneOverride: normalizePhoneNumber(details.mobileNumber || auth.payload.From || null),
-        preferredTime: preferredTimeText,
-        source: "ai_call",
-        treatmentType: emergency ? "emergency" : "general",
-        updatedByUserId: auth.connection.created_by,
-        workflow: null,
-        forceRequestOnly: true,
-      });
-
-      const followUpResponseText = voiceCompletionResponseText({
-        clinicName: clinicName ?? "ClinicFlow clinic",
-        appointmentLabel: null,
-        bookingConfirmed: false,
-        bookingReference: bookingResult.bookingRequest?.confirmation_reference ?? null,
-        details,
-        intent: bookingIntent ?? intent,
-        smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
-        treatmentType,
-      });
-
-      await recordVoiceSpeechTurn({
-        assistantResponseText: followUpResponseText,
-        clinicId: auth.connection.clinic_id,
-        eventType: "twilio.voice_speech.completed",
-        idempotencyKey: stageEventId,
-        payload: auth.payload,
-        processingStatus: "processed",
-        providerEventId: auth.payload.CallSid ?? null,
-        receivedAt,
-        stage,
-      });
-
-      return new Response(
-        buildVoiceWrapUpTwiml({
-          clinicName,
-          followUpUrl: `${buildWebhookBaseUrl(request)}/api/webhooks/twilio/voice/speech?stage=wrap-up`,
-          responseText: followUpResponseText,
-        }),
-        {
-          headers: {
-            "Content-Type": "text/xml",
-            "X-ClinicFlow-Processed": "true",
-            "X-ClinicFlow-Test-Mode": String(auth.testMode),
-          },
-          status: 200,
-        },
-      );
-    }
-
-    const offerUrl = buildSpeechActionUrl({
-      params: {
-        bookingDay: bookingContext.bookingDay,
-        bookingIntent,
-        bookingOfferAvailable: "true",
-        bookingOfferLabel: slot.label,
-        bookingTime: bookingContext.bookingTime,
-      },
-      request,
-      stage: "booking-confirm",
-    });
-
-    const offerText = `I can offer ${slot.label}. Would you like me to book that for you?`;
-    await recordVoiceSpeechTurn({
-      assistantResponseText: offerText,
-      clinicId: auth.connection.clinic_id,
-      eventType: "twilio.voice_speech.triaged",
-      idempotencyKey: stageEventId,
-      payload: auth.payload,
-      processingStatus: "processed",
-      providerEventId: auth.payload.CallSid ?? null,
-      receivedAt,
-      stage,
-    });
-
-    return new Response(
-      buildVoiceBookingOfferTwiml({
-        actionUrl: offerUrl,
-        callerId,
-        clinicName,
-        forwardToNumber,
-        offerText,
-      }),
-      {
-        headers: {
-          "Content-Type": "text/xml",
-          "X-ClinicFlow-Processed": "true",
-          "X-ClinicFlow-Test-Mode": String(auth.testMode),
-        },
-        status: 200,
-      },
-    );
   }
 
   if (stage === "collect-mobile") {
@@ -2211,7 +2297,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
           bookingReference: artifactResult.bookingRequest?.confirmation_reference ?? null,
           details,
           intent: bookingIntent ?? intent,
-          smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
+          smsConfirmationStatus: artifactResult.smsConfirmationStatus ?? null,
           treatmentType,
         })
       : nextPrompt;

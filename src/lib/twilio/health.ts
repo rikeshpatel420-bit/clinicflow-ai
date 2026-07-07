@@ -10,6 +10,7 @@ export type TwilioSetupHealth = {
     configEncryptionSecret: boolean;
     twilioAuthTokenConfigured: boolean;
     smsSenderConfigured: boolean;
+    whatsappConfigured: boolean;
     siteUrlConfigured: boolean;
     testMode: boolean;
   };
@@ -17,6 +18,7 @@ export type TwilioSetupHealth = {
     connected: boolean;
     phoneNumberActive: boolean;
     smsWorking: boolean;
+    whatsappReady: boolean;
     voiceWorking: boolean;
   };
   statuses: {
@@ -103,6 +105,7 @@ export function getTwilioEnvHealth() {
     smsSenderConfigured: hasConfiguredTwilioSender(env),
     smsSenderMessagingServiceConfigured: normalizedConfiguredValue(env.twilioMessagingServiceSid),
     smsSenderPhoneNumberConfigured: normalizedConfiguredValue(env.twilioPhoneNumber),
+    whatsappConfigured: normalizedConfiguredValue(env.twilioWhatsappFrom),
     siteUrlConfigured: Boolean(env.siteUrl),
     testMode: Boolean(env.twilioWebhookTestMode),
   };
@@ -126,6 +129,7 @@ export async function getTwilioSetupHealthForClinic(clinicId: string, options?: 
     ),
     phoneNumberActive: Boolean(connection?.voice_number && isTwilioConnectionActive(connection)),
     smsWorking: Boolean(connection && isTwilioConnectionActive(connection) && env.smsSenderConfigured),
+    whatsappReady: Boolean(connection && isTwilioConnectionActive(connection) && env.whatsappConfigured),
     voiceWorking: Boolean(connection && isTwilioConnectionActive(connection) && connection.voice_number && connection.forward_to_number),
   };
 

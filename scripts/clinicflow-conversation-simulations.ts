@@ -50,9 +50,10 @@ const simulations: Simulation[] = [
   { expectEmergency: true, expectedIntent: "dental_emergency", label: "red flag", speech: "My mouth is swelling and I'm having trouble swallowing" },
   { expectedIntent: "treatment_enquiry", label: "whitening", speech: "I'd like whitening before a wedding" },
   { expectBooking: true, label: "check-up", speech: "Can I book a routine check up Tuesday morning" },
+  { expectBooking: true, label: "routine check-up full preference", speech: "I'd like to book a routine check-up next Tuesday morning, ideally around 9 o'clock" },
 ];
 
-assert.equal(simulations.length, 20, "Voice sprint should run exactly 20 core conversation simulations.");
+assert.equal(simulations.length, 21, "Voice sprint should run the core conversation simulations plus the latest live-call regression.");
 
 for (const simulation of simulations) {
   const intent = classifyVoiceIntent(simulation.speech);
@@ -114,5 +115,21 @@ assert(
   buildVoiceGreetingMessage("ClinicFlow Dental", new Date("2026-07-07T13:00:00.000Z")).startsWith("Good afternoon"),
   "Rendered voice greeting should be time-aware in Europe/London.",
 );
+assert(
+  buildVoiceGreetingMessage("ClinicFlow Dental", new Date("2026-07-07T01:00:00.000Z")).startsWith("Hello"),
+  "Overnight calls should use a neutral hello rather than a time-of-day greeting.",
+);
 
-console.log("ClinicFlow 20-conversation simulation smoke check passed");
+const liveBookingPhrase = "I'd like to book a routine check-up next Tuesday morning, ideally around 9 o'clock";
+const liveBookingDetails = extractVoiceCaptureDetails(liveBookingPhrase);
+assert(isVoiceBookingRequestText(liveBookingPhrase), "Latest live booking phrase should enter booking mode.");
+assert.equal(classifyTreatmentType(liveBookingPhrase), "check_up", "Routine check-up should classify as check-up.");
+assert(liveBookingDetails.preferredAppointmentTime?.toLowerCase().includes("next tuesday"), "Preferred day should be extracted from the one-turn booking phrase.");
+assert(liveBookingDetails.preferredAppointmentTime?.includes("9"), "Preferred 09:00 time should be extracted from the one-turn booking phrase.");
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: liveBookingDetails.preferredAppointmentTime })?.getHours(),
+  9,
+  "Requested 09:00 should be respected before alternatives are offered.",
+);
+
+console.log("ClinicFlow conversation simulation smoke check passed");

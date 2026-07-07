@@ -14,6 +14,12 @@ export type CalendarBookingResult = {
   bookingRequest: BookingRequest | null;
   confirmed: boolean;
   error: string | null;
+  smsConfirmation: {
+    error: string | null;
+    logged: boolean;
+    sent: boolean;
+    status: "not_attempted" | "logged" | "sent" | "failed";
+  };
   slot: { endAt: string; startAt: string; label: string } | null;
 };
 
@@ -23,6 +29,13 @@ type BookingScheduleInput = {
   durationMinutes?: number;
   preferredTimeText?: string | null;
   timezone?: string | null;
+};
+
+const noAppointmentSmsConfirmation: CalendarBookingResult["smsConfirmation"] = {
+  error: null,
+  logged: false,
+  sent: false,
+  status: "not_attempted",
 };
 
 type CalendarBookingInput = {
@@ -42,6 +55,7 @@ type CalendarBookingInput = {
   updatedByUserId?: string | null;
   workflow?: RecoveryWorkflow | null;
   forceRequestOnly?: boolean;
+  clinicName?: string | null;
 };
 
 export type BookingRequestAppointmentInput = {
@@ -60,6 +74,7 @@ export type BookingRequestAppointmentInput = {
   updatedByUserId?: string | null;
   workflow?: RecoveryWorkflow | null;
   forceRequestOnly?: boolean;
+  clinicName?: string | null;
 };
 
 function safeSlotSearch(input: BookingScheduleInput) {
@@ -95,13 +110,15 @@ async function recordAppointmentConfirmationSms(input: {
   appointment: Appointment;
   call?: Call | null;
   clinicId: string;
+  clinicName?: string | null;
   confirmationReference: string;
   patientPhone: string | null;
   slotLabel: string;
 }) {
   const admin = createSupabaseAdminClient();
   const smsSendingEnabled = hasConfiguredTwilioSmsSender();
-  const body = `Your appointment is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. Reply CANCEL if you need to cancel.`;
+  const clinicName = input.clinicName?.trim() || "CF Dental";
+  const body = `Your appointment at ${clinicName} is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. Reply CANCEL if you need to cancel.`;
   const { error } = await admin.from("sms_events").insert({
     body_preview: body,
     call_id: input.call?.id ?? null,
@@ -125,16 +142,16 @@ async function recordAppointmentConfirmationSms(input: {
       operation: "insert",
       table: "sms_events",
     });
-    return;
+    return { error: error.message, logged: false, sent: false, status: "failed" as const };
   }
 
   const { connection } = await getTwilioConnectionForClinic(input.clinicId);
   if (!connection) {
-    return;
+    return { error: "Missing Twilio connection.", logged: true, sent: false, status: "failed" as const };
   }
 
   if (!hasConfiguredTwilioSmsSender()) {
-    return;
+    return { error: "Missing Twilio SMS sender configuration.", logged: true, sent: false, status: "logged" as const };
   }
 
   const sendResult = await sendConfiguredTwilioSms({
@@ -162,7 +179,7 @@ async function recordAppointmentConfirmationSms(input: {
       });
     }
 
-    return;
+    return { error: sendResult.error, logged: true, sent: false, status: "failed" as const };
   }
 
   if (sendResult.messageSid) {
@@ -184,6 +201,8 @@ async function recordAppointmentConfirmationSms(input: {
       });
     }
   }
+
+  return { error: null, logged: true, sent: true, status: "sent" as const };
 }
 
 async function updateBookingArtifacts(input: {
@@ -288,12 +307,14 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
       bookingRequest: null,
       confirmed: false,
       error: bookingRequest.error ?? "Unable to save the booking request.",
+      smsConfirmation: noAppointmentSmsConfirmation,
       slot: null,
     };
   }
 
   let appointment: Appointment | null = null;
   let confirmed = false;
+  let smsConfirmation = noAppointmentSmsConfirmation;
   if (slot && !input.forceRequestOnly) {
     const appointmentPayload: Inserts<"appointments"> = {
       appointment_end: slot.endAt,
@@ -334,6 +355,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
           bookingRequest: bookingRequest.bookingRequest,
           confirmed: false,
           error: appointmentResult.error.message,
+          smsConfirmation: noAppointmentSmsConfirmation,
           slot,
         };
       }
@@ -361,10 +383,11 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
           });
         }
 
-        await recordAppointmentConfirmationSms({
+        smsConfirmation = await recordAppointmentConfirmationSms({
           appointment,
           call: input.call,
           clinicId: input.clinicId,
+          clinicName: input.clinicName,
           confirmationReference: bookingRequest.bookingRequest.confirmation_reference,
           patientPhone,
           slotLabel: slot.label,
@@ -400,6 +423,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
     bookingRequest: bookingRequest.bookingRequest,
     confirmed,
     error: null,
+    smsConfirmation,
     slot,
   };
 }
@@ -417,6 +441,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
 
   let appointment: Appointment | null = null;
   let confirmed = false;
+  let smsConfirmation = noAppointmentSmsConfirmation;
 
   if (slot && !input.forceRequestOnly) {
     const appointmentResult = await admin
@@ -459,6 +484,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
           bookingRequest: input.bookingRequest,
           confirmed: false,
           error: appointmentResult.error.message,
+          smsConfirmation: noAppointmentSmsConfirmation,
           slot,
         };
       }
@@ -486,10 +512,11 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
           });
         }
 
-        await recordAppointmentConfirmationSms({
+        smsConfirmation = await recordAppointmentConfirmationSms({
           appointment,
           call: input.call ?? null,
           clinicId: input.clinicId,
+          clinicName: input.clinicName,
           confirmationReference: input.bookingRequest.confirmation_reference,
           patientPhone,
           slotLabel: slot.label,
@@ -525,6 +552,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
     bookingRequest: input.bookingRequest,
     confirmed,
     error: null,
+    smsConfirmation,
     slot,
   };
 }

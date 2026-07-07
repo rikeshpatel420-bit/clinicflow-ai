@@ -80,15 +80,27 @@ function detectEmergencyFlags(text: string) {
 }
 
 export function classifyVoiceIntent(text: string): VoiceIntent {
+  if (/\b(price|pricing|cost|quote|fee|fees|how much|charge)\b/i.test(text)) {
+    return "pricing_enquiry";
+  }
+
+  if (/\b(cancel|cancellation)\b/i.test(text) && !/\b(reschedule|rebook|move|change)\b/i.test(text)) {
+    return "cancellation_reschedule";
+  }
+
   return voiceConversationEngine.classifyIntent(text).intent;
 }
 
 export function isVoiceBookingRequestText(text: string) {
-  if (/\b(cancel|cancellation|reschedule|rebook|change my appointment|move my appointment)\b/i.test(text)) {
+  if (/\b(price|pricing|cost|quote|fee|fees|how much|charge)\b/i.test(text)) {
     return false;
   }
 
-  return /\b(book|booking|booked|appointment|schedule|reserve|slot|available time|preferred day|preferred time)\b/i.test(text);
+  if (/\b(cancel|cancellation)\b/i.test(text) && !/\b(reschedule|rebook|change my appointment|move my appointment|move it|change it)\b/i.test(text)) {
+    return false;
+  }
+
+  return /\b(book|booking|booked|appointment|schedule|reserve|slot|available time|preferred day|preferred time|reschedule|rebook|change my appointment|move my appointment|move it|change it)\b/i.test(text);
 }
 
 export function classifyTreatmentType(text: string): TreatmentType {

@@ -78,6 +78,92 @@ function appointmentOverlaps(candidateStart: Date, candidateEnd: Date, start: st
   return candidateStart < existingEnd && candidateEnd > existingStart;
 }
 
+function nextWeekdayDate(base: Date, targetWeekday: number, forceFollowingWeek: boolean) {
+  const value = new Date(base.getTime());
+  value.setHours(0, 0, 0, 0);
+  const currentWeekday = value.getDay();
+  let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
+  if (daysAhead === 0 || forceFollowingWeek) {
+    daysAhead += 7;
+  }
+  value.setDate(value.getDate() + daysAhead);
+  return value;
+}
+
+function getMonthIndex(month: string) {
+  const lower = month.toLowerCase();
+  if (lower.startsWith("jan")) return 0;
+  if (lower.startsWith("feb")) return 1;
+  if (lower.startsWith("mar")) return 2;
+  if (lower.startsWith("apr")) return 3;
+  if (lower.startsWith("may")) return 4;
+  if (lower.startsWith("jun")) return 5;
+  if (lower.startsWith("jul")) return 6;
+  if (lower.startsWith("aug")) return 7;
+  if (lower.startsWith("sep")) return 8;
+  if (lower.startsWith("oct")) return 9;
+  if (lower.startsWith("nov")) return 10;
+  return 11;
+}
+
+export function resolvePreferredStart(input: { now: Date; preferredTimeText?: string | null }) {
+  const text = input.preferredTimeText?.toLowerCase().replace(/\s+/g, " ").trim() ?? "";
+  if (!text) {
+    return null;
+  }
+
+  const weekdayMatch = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+  const weekday = weekdayMatch ? getWeekdayIndex(weekdayMatch[1]) : null;
+  const forceNext = /\bnext\b/.test(text);
+  const explicitDateMatch = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/);
+  const date = explicitDateMatch
+    ? new Date(input.now.getFullYear(), getMonthIndex(explicitDateMatch[2]), Number(explicitDateMatch[1]), 0, 0, 0, 0)
+    : weekday !== null
+      ? nextWeekdayDate(input.now, weekday, forceNext)
+      : new Date(input.now.getTime());
+
+  if (explicitDateMatch && date < input.now) {
+    date.setFullYear(date.getFullYear() + 1);
+  }
+  const explicitTime =
+    text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/) ??
+    text.match(/\b(?:at|around|for)\s+(\d{1,2})(?::(\d{2}))?\b/) ??
+    text.match(/\b(\d{1,2})\s*o'clock\b/);
+
+  if (explicitTime) {
+    let hour = Number(explicitTime[1]);
+    const minute = Number(explicitTime[2] ?? "0");
+    const meridiem = explicitTime[3];
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    if (!meridiem && hour < 8) hour += 12;
+    date.setHours(hour, minute, 0, 0);
+    return date;
+  }
+
+  if (/\b(after school|after 4|after four)\b/.test(text)) {
+    date.setHours(16, 0, 0, 0);
+    return date;
+  }
+
+  if (/\bmorning\b/.test(text)) {
+    date.setHours(9, 0, 0, 0);
+    return date;
+  }
+
+  if (/\b(afternoon|after lunch)\b/.test(text)) {
+    date.setHours(14, 0, 0, 0);
+    return date;
+  }
+
+  if (/\bevening\b/.test(text)) {
+    date.setHours(16, 0, 0, 0);
+    return date;
+  }
+
+  return weekday !== null ? date : null;
+}
+
 export async function resolveClinicTimeZone(clinicId: string) {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin.from("clinics").select("timezone").eq("id", clinicId).maybeSingle<{ timezone: string | null }>();
@@ -112,10 +198,14 @@ export async function findSharedNextAvailableAppointmentSlot(input: CalendarAvai
   const confirmedAppointments = await loadConfirmedAppointments(input.clinicId);
   const durationMinutes = input.durationMinutes ?? 30;
   const now = roundUpToNextSlot(new Date(), durationMinutes);
-  const searchEnd = new Date(now.getTime() + (input.emergency ? 24 : 21) * 60 * 60 * 1000);
+  const preferredStart = resolvePreferredStart({ now, preferredTimeText: input.preferredTimeText });
+  const requestedStart = preferredStart && preferredStart > now ? roundUpToNextSlot(preferredStart, durationMinutes) : now;
+  const searchEnd = preferredStart
+    ? new Date(new Date(requestedStart).setHours(17, 0, 0, 0))
+    : new Date(now.getTime() + (input.emergency ? 24 : 21) * 60 * 60 * 1000);
   const slotMillis = durationMinutes * 60 * 1000;
 
-  for (let candidate = new Date(now); candidate <= searchEnd; candidate = new Date(candidate.getTime() + slotMillis)) {
+  for (let candidate = new Date(requestedStart); candidate <= searchEnd; candidate = new Date(candidate.getTime() + slotMillis)) {
     if (!isBusinessDay(candidate, timezone) || !isWithinBusinessHours(candidate, timezone)) {
       continue;
     }

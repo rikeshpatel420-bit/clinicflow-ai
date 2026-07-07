@@ -6,6 +6,7 @@ import {
   extractVoiceCaptureDetails,
   isVoiceBookingRequestText,
 } from "../src/lib/twilio/voice-triage";
+import { resolvePreferredStart } from "../src/lib/integrations/calendar/shared";
 import { sanitizeSpeechText } from "../src/lib/utils/speech";
 
 type Simulation = {
@@ -30,7 +31,7 @@ const simulations: Simulation[] = [
   { expectEmergency: true, expectedIntent: "dental_emergency", label: "emergency", speech: "I'm in severe tooth pain and my face is swollen" },
   { expectedIntent: "treatment_enquiry", label: "implant", speech: "I'd like to ask about an implant consultation" },
   { expectedIntent: "treatment_enquiry", label: "Invisalign", speech: "Can I ask about Invisalign please" },
-  { expectedIntent: "treatment_enquiry", label: "hygiene", speech: "I need a hygiene appointment" },
+  { expectBooking: true, label: "hygiene", speech: "I need a hygiene appointment" },
   { expectBooking: true, label: "child", speech: "Can I book an appointment for my child next week" },
   { expectHuman: false, expectedIntent: "complaint", label: "complaint", speech: "I'm not happy and want to make a complaint" },
   { expectedIntent: "cancellation_reschedule", label: "cancellation", speech: "I need to cancel my appointment" },
@@ -83,5 +84,27 @@ for (const simulation of simulations) {
     assert(details.wantsHuman, `${simulation.label} should capture human-transfer intent.`);
   }
 }
+
+assert.equal(classifyVoiceIntent("How much is a hygienist appointment?"), "pricing_enquiry", "Pricing questions with appointment wording should stay pricing.");
+assert.equal(isVoiceBookingRequestText("How much is a hygienist appointment?"), false, "Pricing questions should not enter booking mode.");
+assert.equal(isVoiceBookingRequestText("Could you send me a text confirmation?"), false, "SMS confirmation requests should not be treated as booking requests.");
+assert.equal(isVoiceBookingRequestText("Can I reschedule my appointment to Tuesday?"), true, "Reschedule requests should remain bookable.");
+
+const forensicBaseDate = new Date(2026, 6, 7, 14, 0, 0, 0);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "next Tuesday morning" })?.toDateString(),
+  new Date(2026, 6, 14, 9, 0, 0, 0).toDateString(),
+  "Next Tuesday should resolve to the following Tuesday, not today.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "14th of July 9am" })?.getDate(),
+  14,
+  "Explicit date requests should be preserved.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "14th of July 9am" })?.getHours(),
+  9,
+  "Explicit times after explicit dates should be preserved.",
+);
 
 console.log("ClinicFlow 20-conversation simulation smoke check passed");

@@ -198,8 +198,8 @@ const voiceIntentDefinitions = [
   {
     intent: "new_patient_appointment" as const,
     label: "New patient appointment",
-    keywords: ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient"],
-    followUpQuestion: "Of course. What's the best mobile number for the practice to reach you on?",
+    keywords: ["new patient", "register", "join", "sign up", "first appointment", "first visit", "become a patient", "book", "booking", "book appointment", "book a check-up", "check-up", "check up", "appointment"],
+    followUpQuestion: "Certainly. Which day works best for you?",
     priority: 4,
     summaryHint: "Capture contact details and the preferred appointment window.",
   },
@@ -222,7 +222,7 @@ const voiceIntentDefinitions = [
   {
     intent: "treatment_enquiry" as const,
     label: "Treatment enquiry",
-    keywords: ["treatment", "implant", "invisalign", "orthodontic", "whitening", "extraction", "wisdom tooth", "sedation", "bonding", "hygiene"],
+    keywords: ["treatment", "implant", "invisalign", "orthodontic", "whitening", "extraction", "wisdom tooth", "sedation", "bonding", "hygiene", "taken out", "take out", "tooth removed", "remove tooth", "nervous"],
     followUpQuestion: "Absolutely. Which treatment are you asking about?",
     priority: 3,
     summaryHint: "Identify the treatment and capture the best callback window.",
@@ -231,7 +231,7 @@ const voiceIntentDefinitions = [
     intent: "pricing_enquiry" as const,
     label: "Pricing enquiry",
     keywords: ["price", "pricing", "cost", "quote", "fee", "fees", "how much", "charge"],
-    followUpQuestion: "Absolutely. What would you like pricing information for?",
+    followUpQuestion: "Prices vary depending on the clinical assessment. Would you like me to arrange a consultation?",
     priority: 2,
     summaryHint: "Avoid quoting exact prices unless clinic-approved knowledge confirms them.",
   },

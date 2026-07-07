@@ -117,6 +117,10 @@ function isGoodbyeSpeechText(text: string) {
   return /\b(no|no thanks|nothing else|that's all|that is all|bye|goodbye|thanks bye|thank you bye|cheers)\b/i.test(text);
 }
 
+function isSmsOrNumberConfirmationSpeechText(text: string) {
+  return /\b(send me a text|text me|send a text|sms|confirmation text|text confirmation|this number|my number|use this number)\b/i.test(text);
+}
+
 function includesTimePreference(text: string) {
   return /\b(morning|afternoon|evening|lunchtime|noon|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i.test(text);
 }
@@ -1275,9 +1279,7 @@ function bookingEligibleIntent(intent: VoiceIntent) {
   return [
     "new_patient_appointment",
     "existing_patient_appointment",
-    "cancellation_reschedule",
     "treatment_enquiry",
-    "pricing_enquiry",
   ].includes(intent);
 }
 
@@ -1311,8 +1313,16 @@ function bookingStageLabel(context: BookingFlowContext) {
 }
 
 function bookingIntentFromSpeech(intent: VoiceIntent, speechText: string) {
+  if (intent === "pricing_enquiry" || intent === "complaint" || intent === "message_for_reception") {
+    return null;
+  }
+
   if (!isBookingSpeechText(speechText)) {
     return null;
+  }
+
+  if (intent === "cancellation_reschedule") {
+    return intent;
   }
 
   if (bookingEligibleIntent(intent)) {
@@ -1628,6 +1638,60 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     );
   }
 
+  if (stage === "wrap-up" && isSmsOrNumberConfirmationSpeechText(speechText)) {
+    const responseText = details.mobileNumber
+      ? "Of course. I'll use that mobile for the confirmation."
+      : "I may not be able to see the number clearly, so could you please say the mobile number for me?";
+
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.triaged",
+      idempotencyKey: `${stageEventId}-sms`,
+      payload: auth.payload,
+      processingStatus: "processed",
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+      stage,
+    });
+
+    if (!details.mobileNumber) {
+      return new Response(
+        buildVoiceBookingQuestionTwiml({
+          actionUrl: buildSpeechActionUrl({ request, stage: "collect-mobile" }),
+          callerId,
+          clinicName,
+          forwardToNumber,
+          promptText: responseText,
+        }),
+        {
+          headers: {
+            "Content-Type": "text/xml",
+            "X-ClinicFlow-Processed": "true",
+            "X-ClinicFlow-Test-Mode": String(auth.testMode),
+          },
+          status: 200,
+        },
+      );
+    }
+
+    return new Response(
+      buildVoiceWrapUpTwiml({
+        clinicName,
+        followUpUrl: `${buildWebhookBaseUrl(request)}/api/webhooks/twilio/voice/speech?stage=wrap-up`,
+        responseText,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
   if (details.wantsHuman) {
     const responseText = "Of course. I can put you through to the reception team now.";
     await recordVoiceSpeechTurn({
@@ -1851,7 +1915,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
 
   const freshBookingRequest = Boolean(latestBookingIntent && isBookingSpeechText(speechText));
   if (stage === "booking-day" || ((stage === "wrap-up" || stage === "triage" || stage === "collect-details") && freshBookingRequest)) {
-    const providedDateTime = details.preferredAppointmentTime ?? (stage === "booking-day" ? normalizeSpeechText(speechText) : null);
+    const providedDateTime = stage === "booking-day" || freshBookingRequest ? normalizeSpeechText(speechText) : details.preferredAppointmentTime;
     const hasDateAndTime = Boolean(providedDateTime && includesTimePreference(providedDateTime));
     const nextStage = hasDateAndTime ? "booking-kind" : stage === "booking-day" ? "booking-time" : "booking-day";
     const nextUrl = buildSpeechActionUrl({
@@ -1864,10 +1928,10 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     });
 
     const responseText = hasDateAndTime
-      ? "Certainly. Is this urgent, or is it routine?"
+      ? "Certainly. Is this urgent, or routine?"
       : stage === "booking-day"
-        ? "Of course. What time would suit you best?"
-        : "Certainly. Which day would suit you best?";
+        ? "Of course. What time works best?"
+        : "Certainly. Which day works best for you?";
     await recordVoiceSpeechTurn({
       assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,
@@ -1910,7 +1974,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       stage: "booking-kind",
     });
 
-    const responseText = "Thank you. Is this urgent, or is it routine?";
+    const responseText = "Thank you. Is this urgent, or routine?";
     await recordVoiceSpeechTurn({
       assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,
@@ -2047,6 +2111,40 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         clinicName,
         forwardToNumber,
         offerText,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
+  if (stage === "collect-mobile") {
+    const responseText = details.mobileNumber
+      ? "Perfect. I'll use that mobile for the confirmation."
+      : "Thank you. The practice will contact you by text or phone.";
+
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.completed",
+      idempotencyKey: stageEventId,
+      payload: auth.payload,
+      processingStatus: "processed",
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+      stage,
+    });
+
+    return new Response(
+      buildVoiceWrapUpTwiml({
+        clinicName,
+        followUpUrl: `${buildWebhookBaseUrl(request)}/api/webhooks/twilio/voice/speech?stage=wrap-up`,
+        responseText,
       }),
       {
         headers: {

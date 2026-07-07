@@ -216,7 +216,7 @@ const voiceIntentDefinitions = [
     label: "Cancellation or reschedule",
     keywords: ["cancel", "cancellation", "reschedule", "move", "change my appointment", "rebook", "re-schedule"],
     followUpQuestion: "No problem. Which appointment would you like me to help with?",
-    priority: 3,
+    priority: 5,
     summaryHint: "Capture the cancellation or replacement time.",
   },
   {

@@ -83,6 +83,14 @@ export function classifyVoiceIntent(text: string): VoiceIntent {
   return voiceConversationEngine.classifyIntent(text).intent;
 }
 
+export function isVoiceBookingRequestText(text: string) {
+  if (/\b(cancel|cancellation|reschedule|rebook|change my appointment|move my appointment)\b/i.test(text)) {
+    return false;
+  }
+
+  return /\b(book|booking|booked|appointment|schedule|reserve|slot|available time|preferred day|preferred time)\b/i.test(text);
+}
+
 export function classifyTreatmentType(text: string): TreatmentType {
   return treatmentConversationEngine.classifyIntent(text).intent;
 }

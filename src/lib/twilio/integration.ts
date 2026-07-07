@@ -15,6 +15,7 @@ import {
   classifyTreatmentType,
   classifyVoiceIntent,
   extractVoiceCaptureDetails,
+  isVoiceBookingRequestText,
   estimateVoiceUrgency,
   type VoiceCaptureDetails,
   type VoiceIntent,
@@ -63,13 +64,17 @@ function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
+function wrapCdata(value: string) {
+  return `<![CDATA[${sanitizeSpeechText(value).replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
+}
+
 function buildSayTwiml(text: string | string[], options: { pauseMs?: number; rate?: string } = {}) {
   const segments = Array.isArray(text) ? text : String(text).split(/(?<=[.!?])\s+/);
   const pauseMs = options.pauseMs ?? (segments.length > 1 ? TWILIO_VOICE_PROFILE.ssmlBreakMs : 0);
   const content = segments
     .map((segment) => sanitizeSpeechText(segment))
     .filter(Boolean)
-    .map((segment) => escapeXml(segment))
+    .map((segment) => wrapCdata(segment))
     .join(pauseMs > 0 ? ` <break time="${pauseMs}ms"/> ` : " ");
 
   if (!TWILIO_VOICE_PROFILE.ssmlEnabled) {
@@ -101,19 +106,22 @@ function normalizeSpeechText(value: string) {
 }
 
 function isBookingSpeechText(text: string) {
-  if (/\b(cancel|cancellation|reschedule|rebook|change my appointment|move my appointment)\b/i.test(text)) {
-    return false;
-  }
-
-  return /\b(book|booking|booked|appointment|schedule|reserve|slot|available time|preferred day|preferred time)\b/i.test(text);
+  return isVoiceBookingRequestText(text);
 }
 
 function isAffirmativeSpeechText(text: string) {
   return /\b(yes|yeah|yep|sure|please|okay|ok|sounds good|that works|perfect|book it|go ahead|fine)\b/i.test(text);
 }
 
+function isGoodbyeSpeechText(text: string) {
+  return /\b(no|no thanks|nothing else|that's all|that is all|bye|goodbye|thanks bye|thank you bye|cheers)\b/i.test(text);
+}
+
+function includesTimePreference(text: string) {
+  return /\b(morning|afternoon|evening|lunchtime|noon|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i.test(text);
+}
+
 function buildVoiceBookingTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string; actionUrl: string; promptText: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const actionUrl = escapeXml(input.actionUrl);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -121,7 +129,7 @@ function buildVoiceBookingTwiml(input: { clinicName: string; callerId: string; f
   <Gather action="${actionUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
     ${buildSayTwiml(input.promptText, { pauseMs: 80 })}
   </Gather>
-  ${buildSayTwiml([`I didn't catch that for ${clinicName}.`, "I'll put you through to reception now."])}
+  ${buildSayTwiml([`I didn't catch that for ${input.clinicName}.`, "I'll put you through to reception now."])}
   <Dial callerId="${escapeXml(input.callerId)}" timeout="20">
     <Number>${escapeXml(input.forwardToNumber)}</Number>
   </Dial>
@@ -148,13 +156,12 @@ function logTwilioVerificationFailure(event: string, verification: { diagnostics
 }
 
 function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const callerId = escapeXml(input.callerId);
   const forwardToNumber = escapeXml(input.forwardToNumber);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([`Sorry, I am having a little trouble just now for ${clinicName}.`, activeFlowPlatformProfile.conversation.voice.closing], { pauseMs: 80 })}
+  ${buildSayTwiml([`Sorry, I'm having a little trouble just now for ${input.clinicName}.`, activeFlowPlatformProfile.conversation.voice.closing], { pauseMs: 80 })}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -162,7 +169,6 @@ function buildVoiceFallbackTwiml(input: { clinicName: string; callerId: string; 
 }
 
 function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string; speechUrl: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const speechUrl = escapeXml(input.speechUrl);
   const callerId = escapeXml(input.callerId);
   const forwardToNumber = escapeXml(input.forwardToNumber);
@@ -170,7 +176,7 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${speechUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
-    ${buildSayTwiml(buildVoiceGreetingMessage(clinicName), { pauseMs: 80 })}
+    ${buildSayTwiml(buildVoiceGreetingMessage(input.clinicName), { pauseMs: 80 })}
   </Gather>
   ${buildSayTwiml(["I didn't catch that.", "I'll put you through to reception now."], { pauseMs: 80 })}
   <Dial callerId="${callerId}" timeout="20">
@@ -180,28 +186,21 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
 }
 
 function buildVoiceFollowUpTwiml(input: { clinicName: string; responseText: string }) {
-  const clinicName = escapeXml(input.clinicName);
-  const responseText = escapeXml(input.responseText);
-
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([responseText || `Perfect. That's been captured for ${clinicName}.`, `Thank you for calling ${clinicName}.`, "Have a lovely day."], { pauseMs: 80 })}
+  ${buildSayTwiml([input.responseText || `Perfect. That's been captured for ${input.clinicName}.`, `Thank you for calling ${input.clinicName}.`, "Have a lovely day."], { pauseMs: 80 })}
   <Hangup />
 </Response>`;
 }
 
 function buildVoiceWrapUpTwiml(input: { clinicName: string; followUpUrl: string; responseText: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const followUpUrl = escapeXml(input.followUpUrl);
-  const responseText = escapeXml(input.responseText);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([responseText, "Is there anything else I can help you with today?"], { pauseMs: 80 })}
-  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
-    ${buildSayTwiml("I'm listening.", { pauseMs: 80 })}
-  </Gather>
-  ${buildSayTwiml([`Thank you for calling ${clinicName}.`, "Have a lovely day."])}
+  ${buildSayTwiml([input.responseText, "Is there anything else I can help you with today?"], { pauseMs: 80 })}
+  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}" />
+  ${buildSayTwiml([`Thank you for calling ${input.clinicName}.`, "Have a lovely day."])}
   <Hangup />
 </Response>`;
 }
@@ -235,13 +234,12 @@ function buildVoiceFailureTwiml(input: { clinicName: string; callerId: string; f
 }
 
 function buildVoiceEmergencyTransferTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const callerId = escapeXml(input.callerId);
   const forwardToNumber = escapeXml(input.forwardToNumber);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([activeFlowPlatformProfile.conversation.voice.emergencyPrompt, `I am sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${clinicName}.`], { pauseMs: 80 })}
+  ${buildSayTwiml([activeFlowPlatformProfile.conversation.voice.emergencyPrompt, `I'm sorry, but because you mentioned difficulty breathing or swallowing, this needs urgent emergency care now for ${input.clinicName}.`], { pauseMs: 80 })}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -249,14 +247,12 @@ function buildVoiceEmergencyTransferTwiml(input: { clinicName: string; callerId:
 }
 
 function buildVoiceHumanTransferTwiml(input: { clinicName: string; callerId: string; forwardToNumber: string; message: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const callerId = escapeXml(input.callerId);
   const forwardToNumber = escapeXml(input.forwardToNumber);
-  const message = escapeXml(input.message);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([message, `I will put you through to ${clinicName} now.`], { pauseMs: 80 })}
+  ${buildSayTwiml([input.message, `I'll put you through to ${input.clinicName} now.`], { pauseMs: 80 })}
   <Dial callerId="${callerId}" timeout="20">
     <Number>${forwardToNumber}</Number>
   </Dial>
@@ -264,23 +260,20 @@ function buildVoiceHumanTransferTwiml(input: { clinicName: string; callerId: str
 }
 
 function buildVoicemailPromptTwiml(input: { clinicName: string; voicemailUrl: string }) {
-  const clinicName = escapeXml(input.clinicName);
   const voicemailUrl = escapeXml(input.voicemailUrl);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([`Hi, you have reached ${clinicName}.`, "Please leave your name and number after the tone, and we will call you back."])}
+  ${buildSayTwiml([`Hi, you've reached ${input.clinicName}.`, "Please leave your name and number after the tone, and we'll call you back."])}
   <Record action="${voicemailUrl}" method="POST" maxLength="120" playBeep="true" timeout="5" transcribeCallback="${voicemailUrl}" trim="trim-silence" />
   ${buildSayTwiml(["We did not receive a message.", "Goodbye."])}
 </Response>`;
 }
 
 function buildVoicemailFailureTwiml(input: { clinicName: string }) {
-  const clinicName = escapeXml(input.clinicName);
-
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  ${buildSayTwiml([`Sorry, ClinicFlow could not finish recording ${clinicName} right now.`, "Please try again shortly."], { pauseMs: 80 })}
+  ${buildSayTwiml([`Sorry, ClinicFlow could not finish recording ${input.clinicName} right now.`, "Please try again shortly."], { pauseMs: 80 })}
   <Hangup />
 </Response>`;
 }
@@ -1339,10 +1332,10 @@ function voiceCompletionResponseText(input: {
   treatmentType: ReturnType<typeof classifyTreatmentType>;
 }) {
   const bookingLine = input.bookingConfirmed
-    ? `You're all set. I've booked your appointment for ${input.appointmentLabel ?? "the next available slot"}. Your confirmation reference is ${input.bookingReference ?? "the practice reference"}.`
+    ? `You're booked for ${input.appointmentLabel ?? "the next available slot"}. Your reference is ${input.bookingReference ?? "the practice reference"}.${input.details.mobileNumber ? " I've sent a text confirmation as well." : ""}`
     : input.bookingReference
-      ? `Perfect. I've submitted your appointment request and the practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
-      : `I can take the details now and the practice will confirm the exact appointment by text or phone.`;
+      ? `Perfect. I've submitted your appointment request. The practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
+      : `I can take the details now. If the diary is connected, I'll offer a time. If not, the practice will confirm by text or phone.`;
 
   if (input.details.breathingOrSwallowingIssue) {
     return `${bookingLine} Because you mentioned breathing or swallowing difficulty, this needs urgent emergency care now.`;
@@ -1350,20 +1343,20 @@ function voiceCompletionResponseText(input: {
 
   switch (input.intent) {
     case "dental_emergency":
-      return `${bookingLine} This is urgent, and I'll help get the earliest emergency review arranged.`;
+      return `${bookingLine} This is urgent, so I'll keep this marked for the earliest emergency review.`;
     case "new_patient_appointment":
     case "existing_patient_appointment":
-      return `${bookingLine} Thanks, that's everything I need.`;
+      return `${bookingLine} That's everything I need.`;
     case "cancellation_reschedule":
-      return `${bookingLine} Thanks, I've passed that on.`;
+      return `${bookingLine} No problem.`;
     case "treatment_enquiry":
-      return `${bookingLine} Thanks. I'll pass that on now.`;
+      return `${bookingLine} Certainly.`;
     case "pricing_enquiry":
-      return `${bookingLine} Thanks. I'll pass that on now.`;
+      return `${bookingLine} Certainly.`;
     case "complaint":
       return `I'm sorry about that. I'll connect you to the right person now.`;
     case "message_for_reception":
-      return `${bookingLine} I'll pass your message on now.`;
+      return `${bookingLine} Thank you.`;
     default:
       return `${bookingLine} Thank you.`;
   }
@@ -1605,6 +1598,36 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   const treatmentType = classifyTreatmentType(speechText);
   const details = extractVoiceCaptureDetails(speechText);
 
+  if (stage === "wrap-up" && isGoodbyeSpeechText(speechText)) {
+    const responseText = "No problem.";
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
+      clinicId: auth.connection.clinic_id,
+      eventType: "twilio.voice_speech.completed",
+      idempotencyKey: `${stageEventId}-goodbye`,
+      payload: auth.payload,
+      processingStatus: "processed",
+      providerEventId: auth.payload.CallSid ?? null,
+      receivedAt,
+      stage,
+    });
+
+    return new Response(
+      buildVoiceFollowUpTwiml({
+        clinicName,
+        responseText,
+      }),
+      {
+        headers: {
+          "Content-Type": "text/xml",
+          "X-ClinicFlow-Processed": "true",
+          "X-ClinicFlow-Test-Mode": String(auth.testMode),
+        },
+        status: 200,
+      },
+    );
+  }
+
   if (details.wantsHuman) {
     const responseText = "Of course. I can put you through to the reception team now.";
     await recordVoiceSpeechTurn({
@@ -1683,7 +1706,8 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   }
 
   const bookingContext = parseBookingFlowContext(request);
-  const bookingIntent = bookingContext.bookingIntent ?? bookingIntentFromSpeech(intent, speechText);
+  const latestBookingIntent = bookingIntentFromSpeech(intent, speechText);
+  const bookingIntent = latestBookingIntent ?? bookingContext.bookingIntent;
 
   if (stage === "booking-confirm" && bookingIntent) {
     const preferredTimeText = bookingStagePreferredTime(bookingContext);
@@ -1825,17 +1849,25 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     }
   });
 
-  if (stage === "booking-day" || (stage === "wrap-up" && bookingIntent && isBookingSpeechText(speechText))) {
+  const freshBookingRequest = Boolean(latestBookingIntent && isBookingSpeechText(speechText));
+  if (stage === "booking-day" || ((stage === "wrap-up" || stage === "triage" || stage === "collect-details") && freshBookingRequest)) {
+    const providedDateTime = details.preferredAppointmentTime ?? (stage === "booking-day" ? normalizeSpeechText(speechText) : null);
+    const hasDateAndTime = Boolean(providedDateTime && includesTimePreference(providedDateTime));
+    const nextStage = hasDateAndTime ? "booking-kind" : stage === "booking-day" ? "booking-time" : "booking-day";
     const nextUrl = buildSpeechActionUrl({
       params: {
-        bookingDay: normalizeSpeechText(speechText),
+        bookingDay: providedDateTime ?? null,
         bookingIntent,
       },
       request,
-      stage: "booking-time",
+      stage: nextStage,
     });
 
-    const responseText = "Of course. What time would suit you best?";
+    const responseText = hasDateAndTime
+      ? "Certainly. Is this urgent, or is it routine?"
+      : stage === "booking-day"
+        ? "Of course. What time would suit you best?"
+        : "Certainly. Which day would suit you best?";
     await recordVoiceSpeechTurn({
       assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,

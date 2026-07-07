@@ -10,6 +10,7 @@
     "flow-products:smoke": "npx tsx scripts/flow-products-smoke.ts",
     "flow-workflow:smoke": "npx tsx scripts/flow-workflow-smoke.ts",
     "clinicflow:call-quality-smoke": "npx tsx scripts/clinicflow-call-quality-smoke.ts",
+    "clinicflow:conversation-simulations": "npx tsx scripts/clinicflow-conversation-simulations.ts",
     "clinicflow:voice-smoke": "npx tsx scripts/clinicflow-voice-smoke.ts",
     "saas:smoke": "npx tsx scripts/saas-smoke.ts",
     "customer:smoke": "npx tsx scripts/customer-experience-smoke.ts",

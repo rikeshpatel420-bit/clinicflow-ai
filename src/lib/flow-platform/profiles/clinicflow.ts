@@ -436,7 +436,7 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
       escalationIntents: ["dental_emergency", "complaint"],
       fallbackIntent: "other_unclear",
       fallbackPrompt: "Of course. Could you tell me a little more so I can help properly?",
-      greeting: "Good morning, {{clinicName}} reception. How can I help you today?",
+      greeting: "{{timeGreeting}}, {{clinicName}} reception. How can I help you today?",
       intentDefinitions: voiceIntentDefinitions,
       industryTerminology: ["appointment", "emergency", "reception", "callback", "consultation", "hygiene", "implant", "Invisalign"],
       language: "en-GB",

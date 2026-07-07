@@ -35,6 +35,7 @@ type CalendarBookingInput = {
   nextStep: string;
   notes: string;
   patient?: Patient | null;
+  patientPhoneOverride?: string | null;
   preferredTime?: string | null;
   source: CalendarBookingSource;
   treatmentType: string;
@@ -52,6 +53,7 @@ export type BookingRequestAppointmentInput = {
   lead?: PatientLead | null;
   notes: string;
   patient?: Patient | null;
+  patientPhoneOverride?: string | null;
   preferredTime?: string | null;
   source: CalendarBookingSource;
   treatmentType: string;
@@ -248,7 +250,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
   const admin = createSupabaseAdminClient();
   const patientName = input.patient?.full_name ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
   const patientEmail = input.patient?.email ?? null;
-  const patientPhone = normalizePhoneNumber(input.patient?.phone ?? null);
+  const patientPhone = normalizePhoneNumber(input.patient?.phone ?? input.patientPhoneOverride ?? null);
   const slot = await safeSlotSearch({
     clinicId: input.clinicId,
     emergency: input.emergency,
@@ -406,7 +408,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
   const admin = createSupabaseAdminClient();
   const patientName = input.patient?.full_name ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
   const patientEmail = input.patient?.email ?? null;
-  const patientPhone = normalizePhoneNumber(input.patient?.phone ?? null);
+  const patientPhone = normalizePhoneNumber(input.patient?.phone ?? input.patientPhoneOverride ?? null);
   const slot = await safeSlotSearch({
     clinicId: input.clinicId,
     emergency: input.emergency,

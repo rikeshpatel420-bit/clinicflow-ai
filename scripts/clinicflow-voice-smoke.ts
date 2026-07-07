@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { clinicFlowPlatformProfile } from "../src/lib/flow-platform";
+import { buildVoiceGreetingMessage } from "../src/lib/twilio/voice-triage";
 import { sanitizeSpeechText } from "../src/lib/utils/speech";
 
 const voice = clinicFlowPlatformProfile.conversation.voice;
@@ -37,7 +38,10 @@ assert(voice.greeting.includes("How can I help you today?"), "ClinicFlow greetin
 assert(voice.closing.toLowerCase().includes("here if you need anything else"), "ClinicFlow closing should stay warm and helpful.");
 assert(voice.templates.sms.missedCallRecovery.includes("I'll call you back"), "Missed-call recovery should sound personal.");
 assert(voice.templates.sms.replyYes.includes("I'll call you back shortly"), "Reply-yes SMS should sound personal.");
-assert(voice.greeting.startsWith("Good morning"), "ClinicFlow greeting should sound like a receptionist, not an IVR.");
+assert(
+  buildVoiceGreetingMessage("ClinicFlow Dental", new Date("2026-07-07T13:00:00.000Z")).startsWith("Good afternoon"),
+  "ClinicFlow live greeting should use UK time, not a hardcoded morning greeting.",
+);
 assert(sanitizeSpeechText("I&apos;ve &amp; got it") === "I've & got it", "Speech output should decode HTML entities before synthesis.");
 assert(
   knowledgeBase.safeResponses.includes("I can take the details now and the practice will confirm the exact appointment by text or phone."),

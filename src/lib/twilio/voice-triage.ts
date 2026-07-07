@@ -210,8 +210,38 @@ export function buildVoiceTranscriptSummary(input: {
     .join(" ");
 }
 
-export function buildVoiceGreetingMessage(clinicName: string) {
-  return activeFlowPlatformProfile.conversation.voice.greeting.replace("{{clinicName}}", clinicName);
+export function resolveUkTimeGreeting(now = new Date()) {
+  const londonHour = Number.parseInt(
+    new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      hour12: false,
+      timeZone: "Europe/London",
+    }).format(now),
+    10,
+  );
+
+  if (Number.isNaN(londonHour)) {
+    return "Hello";
+  }
+
+  if (londonHour < 12) {
+    return "Good morning";
+  }
+
+  if (londonHour < 18) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
+}
+
+export function buildVoiceGreetingMessage(clinicName: string, now = new Date()) {
+  const timeGreeting = resolveUkTimeGreeting(now);
+
+  return activeFlowPlatformProfile.conversation.voice.greeting
+    .replace("Good morning", timeGreeting)
+    .replace("{{timeGreeting}}", timeGreeting)
+    .replace("{{clinicName}}", clinicName);
 }
 
 export function buildVoiceFollowUpPrompt(intent: VoiceIntent) {

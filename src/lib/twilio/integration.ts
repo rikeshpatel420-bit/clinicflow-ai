@@ -1176,6 +1176,7 @@ async function upsertVoiceTriageArtifacts(input: {
       nextStep: "The practice will confirm the exact time shortly.",
       notes: transcriptSummary,
       patient,
+      patientPhoneOverride: effectivePhone,
       preferredTime: input.details.preferredAppointmentTime ?? input.details.requestedDateTime ?? null,
       source: "ai_call",
       treatmentType: input.treatmentType,
@@ -1339,12 +1340,13 @@ function voiceCompletionResponseText(input: {
   bookingConfirmed?: boolean;
   bookingReference?: string | null;
   appointmentLabel?: string | null;
+  smsConfirmationExpected?: boolean;
   treatmentType: ReturnType<typeof classifyTreatmentType>;
 }) {
   const bookingLine = input.bookingConfirmed
-    ? `You're booked for ${input.appointmentLabel ?? "the next available slot"}. Your reference is ${input.bookingReference ?? "the practice reference"}.${input.details.mobileNumber ? " I've sent a text confirmation as well." : ""}`
+    ? `You're booked for ${input.appointmentLabel ?? "the next available slot"}. Your reference is ${input.bookingReference ?? "the practice reference"}.${input.smsConfirmationExpected ? " A text confirmation is on its way." : ""}`
     : input.bookingReference
-      ? `Perfect. I've submitted your appointment request. The practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
+      ? `Perfect. Your appointment request is in. The practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
       : `I can take the details now. If the diary is connected, I'll offer a time. If not, the practice will confirm by text or phone.`;
 
   if (input.details.breathingOrSwallowingIssue) {
@@ -1563,6 +1565,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   const forwardToNumber = auth.connection.forward_to_number || "";
   const speechText = (auth.payload.SpeechResult || auth.payload.TranscriptionText || auth.payload.Digits || "").trim();
   const stage = new URL(request.url).searchParams.get("stage") ?? "triage";
+  const retryAttempted = new URL(request.url).searchParams.get("retry") === "1";
   const stageEventId = `${eventId}-${stage}`;
 
   await recordWebhookEvent({
@@ -1586,6 +1589,43 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
     });
+
+    if (stage === "wrap-up") {
+      return new Response(
+        buildVoiceFollowUpTwiml({
+          clinicName,
+          responseText: "No problem.",
+        }),
+        {
+          headers: {
+            "Content-Type": "text/xml",
+            "X-ClinicFlow-Processed": "true",
+            "X-ClinicFlow-Test-Mode": String(auth.testMode),
+          },
+          status: 200,
+        },
+      );
+    }
+
+    if (!retryAttempted) {
+      return new Response(
+        buildVoiceBookingQuestionTwiml({
+          actionUrl: buildSpeechActionUrl({ request, stage, params: { retry: "1" } }),
+          callerId,
+          clinicName,
+          forwardToNumber,
+          promptText: "Sorry, I missed that. Please say that once more.",
+        }),
+        {
+          headers: {
+            "Content-Type": "text/xml",
+            "X-ClinicFlow-Processed": "false",
+            "X-ClinicFlow-Test-Mode": String(auth.testMode),
+          },
+          status: 200,
+        },
+      );
+    }
 
     return new Response(
       buildVoiceFallbackTwiml({
@@ -1792,6 +1832,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         .filter(Boolean)
         .join(" "),
       patient: null,
+      patientPhoneOverride: normalizePhoneNumber(details.mobileNumber || auth.payload.From || null),
       preferredTime: preferredTimeText,
       source: "ai_call",
       treatmentType: bookingIntent === "dental_emergency" ? "emergency" : "general",
@@ -1807,6 +1848,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       bookingReference: bookingResult.bookingRequest?.confirmation_reference ?? null,
       details,
       intent: bookingIntent,
+      smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
       treatmentType,
     });
 
@@ -2032,6 +2074,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
           .filter(Boolean)
           .join(" "),
         patient: null,
+        patientPhoneOverride: normalizePhoneNumber(details.mobileNumber || auth.payload.From || null),
         preferredTime: preferredTimeText,
         source: "ai_call",
         treatmentType: emergency ? "emergency" : "general",
@@ -2047,6 +2090,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         bookingReference: bookingResult.bookingRequest?.confirmation_reference ?? null,
         details,
         intent: bookingIntent ?? intent,
+        smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
         treatmentType,
       });
 
@@ -2167,6 +2211,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
           bookingReference: artifactResult.bookingRequest?.confirmation_reference ?? null,
           details,
           intent: bookingIntent ?? intent,
+          smsConfirmationExpected: Boolean(normalizePhoneNumber(details.mobileNumber || auth.payload.From || null)),
           treatmentType,
         })
       : nextPrompt;

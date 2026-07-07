@@ -1,10 +1,12 @@
 import { strict as assert } from "node:assert";
 import {
   buildVoiceFollowUpPrompt,
+  buildVoiceGreetingMessage,
   classifyTreatmentType,
   classifyVoiceIntent,
   extractVoiceCaptureDetails,
   isVoiceBookingRequestText,
+  resolveUkTimeGreeting,
 } from "../src/lib/twilio/voice-triage";
 import { resolvePreferredStart } from "../src/lib/integrations/calendar/shared";
 import { sanitizeSpeechText } from "../src/lib/utils/speech";
@@ -105,6 +107,12 @@ assert.equal(
   resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "14th of July 9am" })?.getHours(),
   9,
   "Explicit times after explicit dates should be preserved.",
+);
+assert.equal(resolveUkTimeGreeting(new Date("2026-07-07T13:00:00.000Z")), "Good afternoon", "Afternoon UK calls must not start with good morning.");
+assert.equal(resolveUkTimeGreeting(new Date("2026-07-07T19:00:00.000Z")), "Good evening", "Evening UK calls should use an evening greeting.");
+assert(
+  buildVoiceGreetingMessage("ClinicFlow Dental", new Date("2026-07-07T13:00:00.000Z")).startsWith("Good afternoon"),
+  "Rendered voice greeting should be time-aware in Europe/London.",
 );
 
 console.log("ClinicFlow 20-conversation simulation smoke check passed");

@@ -3,6 +3,7 @@ import { clinicFlowPlatformProfile } from "../src/lib/flow-platform";
 import { sanitizeSpeechText } from "../src/lib/utils/speech";
 
 const voice = clinicFlowPlatformProfile.conversation.voice;
+const knowledgeBase = clinicFlowPlatformProfile.knowledgeBase;
 
 const bannedPhrases = [
   "I've made a note",
@@ -37,6 +38,10 @@ assert(voice.templates.sms.missedCallRecovery.includes("I'll call you back"), "M
 assert(voice.templates.sms.replyYes.includes("I'll call you back shortly"), "Reply-yes SMS should sound personal.");
 assert(voice.greeting.startsWith("Good morning"), "ClinicFlow greeting should sound like a receptionist, not an IVR.");
 assert(sanitizeSpeechText("I&apos;ve &amp; got it") === "I've & got it", "Speech output should decode HTML entities before synthesis.");
+assert(
+  knowledgeBase.safeResponses.includes("I can take the details now and the practice will confirm the exact appointment by text or phone."),
+  "ClinicFlow should clearly state when the practice will confirm the appointment.",
+);
 
 for (const prompt of [...voice.intentDefinitions, ...(voice.treatmentDefinitions ?? [])]) {
   const questionMarks = (prompt.followUpQuestion.match(/\?/g) ?? []).length;

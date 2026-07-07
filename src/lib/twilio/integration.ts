@@ -1222,7 +1222,7 @@ function voiceCompletionResponseText(input: {
     ? `You're all set. I've booked your appointment for ${input.appointmentLabel ?? "the next available slot"}. Your confirmation reference is ${input.bookingReference ?? "the practice reference"}.`
     : input.bookingReference
       ? `Perfect. I've submitted your appointment request and the practice will confirm the exact time shortly. Your reference is ${input.bookingReference}.`
-      : `Perfect. That's been captured for ${input.clinicName}.`;
+      : `I can take the details now and the practice will confirm the exact appointment by text or phone.`;
 
   if (input.details.breathingOrSwallowingIssue) {
     return `${bookingLine} Because you mentioned breathing or swallowing difficulty, this needs urgent emergency care now.`;

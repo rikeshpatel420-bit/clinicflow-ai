@@ -535,12 +535,18 @@ export const clinicFlowPlatformProfile = defineFlowPlatformProfile({
         title: "Summary",
         prompt: "Summarise the call clearly for reception with urgency, next action, and contact details.",
       },
+      {
+        key: "booking",
+        title: "Booking",
+        prompt: "Ask one booking question at a time, never promise confirmation unless a calendar slot is actually secured, and keep the caller informed in a calm, confident tone.",
+      },
     ],
     safeResponses: [
       "I can certainly help with that.",
       "I'm sorry you're in pain.",
       "Let's get you to the right clinician.",
       "Perfect.",
+      "I can take the details now and the practice will confirm the exact appointment by text or phone.",
       "Done.",
       "That's booked.",
     ],

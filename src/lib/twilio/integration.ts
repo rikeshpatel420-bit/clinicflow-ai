@@ -21,12 +21,17 @@ import {
 } from "./voice-triage";
 import { resolveTwilioPublicOrigin, verifyTwilioSignature, type TwilioWebhookType } from "./verification";
 import { sanitizeSpeechText } from "@/lib/utils/speech";
-import type { NextRequest } from "next/server";
+import { buildVoiceCallTurnTelemetry, estimateAssistantSpeechDurationMs } from "./call-quality";
+import { getTwilioAudioNormalizationProfile } from "./audio-normalization";
+import { after, type NextRequest } from "next/server";
 
 const activeFlowPlatformProfile = getActiveFlowPlatformProfile();
 const TWILIO_VOICE_PROFILE = activeFlowPlatformProfile.conversation.voice;
 const TWILIO_SPEAK_VOICE = TWILIO_VOICE_PROFILE.voice;
 const TWILIO_SPEAK_LANGUAGE = TWILIO_VOICE_PROFILE.language;
+const TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS = "1";
+const TWILIO_GATHER_TIMEOUT_SECONDS = "3";
+const TWILIO_AUDIO_NORMALIZATION_PROFILE = getTwilioAudioNormalizationProfile();
 
 export type TwilioExtendedWebhookPayload = TwilioWebhookPayload & {
   Digits?: string;
@@ -35,6 +40,7 @@ export type TwilioExtendedWebhookPayload = TwilioWebhookPayload & {
   RecordingSource?: string;
   RecordingStatus?: string;
   RecordingUrl?: string;
+  SpeechDuration?: string;
   SpeechResult?: string;
   TranscriptionConfidence?: string;
   TranscriptionStatus?: string;
@@ -112,7 +118,7 @@ function buildVoiceBookingTwiml(input: { clinicName: string; callerId: string; f
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${actionUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
+  <Gather action="${actionUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
     ${buildSayTwiml(input.promptText, { pauseMs: 80 })}
   </Gather>
   ${buildSayTwiml([`I didn't catch that for ${clinicName}.`, "I'll put you through to reception now."])}
@@ -163,7 +169,7 @@ function buildVoiceGreetingTwiml(input: { clinicName: string; callerId: string; 
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${speechUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
+  <Gather action="${speechUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
     ${buildSayTwiml(buildVoiceGreetingMessage(clinicName), { pauseMs: 80 })}
   </Gather>
   ${buildSayTwiml(["I didn't catch that.", "I'll put you through to reception now."], { pauseMs: 80 })}
@@ -192,7 +198,7 @@ function buildVoiceWrapUpTwiml(input: { clinicName: string; followUpUrl: string;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${buildSayTwiml([responseText, "Is there anything else I can help you with today?"], { pauseMs: 80 })}
-  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
+  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
     ${buildSayTwiml("I'm listening.", { pauseMs: 80 })}
   </Gather>
   ${buildSayTwiml([`Thank you for calling ${clinicName}.`, "Have a lovely day."])}
@@ -291,6 +297,119 @@ function logTwilioError(event: string, error: unknown, details: Record<string, u
   console.error("[ClinicFlow Twilio]", event, JSON.stringify({ ...details, error: error instanceof Error ? error.message : String(error) }));
 }
 
+function parseTwilioSpeechDurationMs(value?: string | null) {
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+
+  return duration > 1000 ? Math.round(duration) : Math.round(duration * 1000);
+}
+
+function withWebhookDiagnostics(payload: TwilioExtendedWebhookPayload, diagnostics: Record<string, unknown>) {
+  return {
+    ...payload,
+    clinicflowDiagnostics: diagnostics,
+  } as Json;
+}
+
+function logVoiceTurnTelemetry(telemetry: ReturnType<typeof buildVoiceCallTurnTelemetry>) {
+  logTwilioEvent("voice_turn_telemetry", {
+    assistantResponseEndedAt: telemetry.assistantResponseEndedAt,
+    assistantResponseLatencyMs: telemetry.assistantResponseLatencyMs,
+    assistantResponseStartedAt: telemetry.assistantResponseStartedAt,
+    callSid: telemetry.callSid,
+    callerSpeechEndedAt: telemetry.callerSpeechEndedAt,
+    callerSpeechStartedAt: telemetry.callerSpeechStartedAt,
+    clinicId: telemetry.clinicId,
+    heardPhrases: telemetry.heardPhrases,
+    silenceGapMs: telemetry.silenceGapMs,
+    speechDurationMs: telemetry.speechDurationMs,
+    stage: telemetry.stage,
+  });
+
+  if ((telemetry.silenceGapMs ?? 0) > 2000) {
+    logTwilioEvent("voice_silence_gap_detected", {
+      callSid: telemetry.callSid,
+      clinicId: telemetry.clinicId,
+      silenceGapMs: telemetry.silenceGapMs,
+      stage: telemetry.stage,
+    });
+  }
+}
+
+function buildSpeechTurnDiagnostics(input: {
+  assistantResponseText: string;
+  clinicId: string | null;
+  payload: TwilioExtendedWebhookPayload;
+  receivedAt: string;
+  responseStartedAt?: Date;
+  stage: string;
+}) {
+  const speechDurationMs = parseTwilioSpeechDurationMs(input.payload.SpeechDuration);
+  const callerSpeechEndedAt = new Date(input.receivedAt);
+  const callerSpeechStartedAt = speechDurationMs ? new Date(callerSpeechEndedAt.getTime() - speechDurationMs) : callerSpeechEndedAt;
+  const assistantResponseStartedAt = input.responseStartedAt ?? new Date();
+  const assistantResponseEndedAt = new Date(assistantResponseStartedAt.getTime() + estimateAssistantSpeechDurationMs(input.assistantResponseText));
+  const telemetry = buildVoiceCallTurnTelemetry({
+    assistantResponseEndedAt,
+    assistantResponseStartedAt,
+    assistantResponseText: input.assistantResponseText,
+    callSid: input.payload.CallSid ?? null,
+    callerSpeechDurationMs: speechDurationMs,
+    callerSpeechEndedAt,
+    callerSpeechStartedAt,
+    clinicId: input.clinicId,
+    speechText: input.payload.SpeechResult || input.payload.TranscriptionText || input.payload.Digits || "",
+    stage: input.stage,
+  });
+
+  return {
+    audioNormalization: TWILIO_AUDIO_NORMALIZATION_PROFILE,
+    gather: {
+      bargeIn: true,
+      input: "speech",
+      speechModel: "phone_call",
+      speechRecognitionProvider: "twilio-gather",
+      speechTimeoutSeconds: Number(TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS),
+      timeoutSeconds: Number(TWILIO_GATHER_TIMEOUT_SECONDS),
+    },
+    telemetry,
+  };
+}
+
+async function recordVoiceSpeechTurn(input: {
+  assistantResponseText: string;
+  clinicId: string;
+  eventType: string;
+  idempotencyKey: string;
+  payload: TwilioExtendedWebhookPayload;
+  processingStatus: "processed" | "ignored" | "failed";
+  providerEventId: string | null;
+  receivedAt: string;
+  stage: string;
+}) {
+  const diagnostics = buildSpeechTurnDiagnostics({
+    assistantResponseText: input.assistantResponseText,
+    clinicId: input.clinicId,
+    payload: input.payload,
+    receivedAt: input.receivedAt,
+    stage: input.stage,
+  });
+  logVoiceTurnTelemetry(diagnostics.telemetry);
+
+  await recordWebhookEvent({
+    clinicId: input.clinicId,
+    eventType: input.eventType,
+    idempotencyKey: input.idempotencyKey,
+    payload: withWebhookDiagnostics(input.payload, diagnostics),
+    processingStatus: input.processingStatus,
+    processedAt: new Date().toISOString(),
+    providerEventId: input.providerEventId,
+    receivedAt: input.receivedAt,
+  });
+}
+
 async function recordWebhookEvent(input: {
   clinicId: string | null;
   errorMessage?: string | null;
@@ -385,6 +504,7 @@ function parseExtendedTwilioFormData(formData: FormData): TwilioExtendedWebhookP
     RecordingSource: String(formData.get("RecordingSource") ?? ""),
     RecordingStatus: String(formData.get("RecordingStatus") ?? ""),
     RecordingUrl: String(formData.get("RecordingUrl") ?? ""),
+    SpeechDuration: String(formData.get("SpeechDuration") ?? ""),
     SpeechResult: String(formData.get("SpeechResult") ?? ""),
     TranscriptionConfidence: String(formData.get("TranscriptionConfidence") ?? ""),
     TranscriptionStatus: String(formData.get("TranscriptionStatus") ?? ""),
@@ -1245,7 +1365,7 @@ function voiceCompletionResponseText(input: {
     case "message_for_reception":
       return `${bookingLine} I'll pass your message on now.`;
     default:
-      return `${bookingLine} Thanks. I've got what I need.`;
+      return `${bookingLine} Thank you.`;
   }
 }
 
@@ -1268,7 +1388,17 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     clinicId: connection.clinic_id,
     eventType: "twilio.voice.received",
     idempotencyKey: eventId,
-    payload,
+    payload: withWebhookDiagnostics(payload, {
+      audioNormalization: TWILIO_AUDIO_NORMALIZATION_PROFILE,
+      gather: {
+        bargeIn: true,
+        input: "speech",
+        speechModel: "phone_call",
+        speechRecognitionProvider: "twilio-gather",
+        speechTimeoutSeconds: Number(TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS),
+        timeoutSeconds: Number(TWILIO_GATHER_TIMEOUT_SECONDS),
+      },
+    }),
     processingStatus: "received",
     providerEventId: payload.CallSid ?? null,
     receivedAt,
@@ -1328,7 +1458,17 @@ export async function handleTwilioVoiceWebhook(request: NextRequest) {
     clinicId: connection.clinic_id,
     eventType: "twilio.voice.processed",
     idempotencyKey: eventId,
-    payload,
+    payload: withWebhookDiagnostics(payload, {
+      audioNormalization: TWILIO_AUDIO_NORMALIZATION_PROFILE,
+      gather: {
+        bargeIn: true,
+        input: "speech",
+        speechModel: "phone_call",
+        speechRecognitionProvider: "twilio-gather",
+        speechTimeoutSeconds: Number(TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS),
+        timeoutSeconds: Number(TWILIO_GATHER_TIMEOUT_SECONDS),
+      },
+    }),
     processingStatus: "processed",
     processedAt: new Date().toISOString(),
     providerEventId: payload.CallSid ?? null,
@@ -1466,15 +1606,17 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
   const details = extractVoiceCaptureDetails(speechText);
 
   if (details.wantsHuman) {
-    await recordWebhookEvent({
+    const responseText = "Of course. I can put you through to the reception team now.";
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.forwarded",
       idempotencyKey: `${stageEventId}-human`,
       payload: auth.payload,
       processingStatus: "ignored",
-      processedAt: new Date().toISOString(),
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
+      stage,
     });
 
     return new Response(
@@ -1482,7 +1624,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         clinicName,
         callerId,
         forwardToNumber,
-        message: "Of course. I can put you through to the reception team now.",
+        message: responseText,
       }),
       {
       headers: {
@@ -1504,7 +1646,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       Called: auth.payload.Called || auth.connection.voice_number,
       From: auth.payload.From || "",
     },
-    { refreshSummary: false },
+    { minimal: true, refreshSummary: false },
   );
 
   if (!processingResult.ok || !("call" in processingResult) || !processingResult.call) {
@@ -1580,15 +1722,16 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       treatmentType,
     });
 
-    await recordWebhookEvent({
+    await recordVoiceSpeechTurn({
+      assistantResponseText: bookingConfirmationText,
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.completed",
       idempotencyKey: stageEventId,
       payload: auth.payload,
       processingStatus: "processed",
-      processedAt: new Date().toISOString(),
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
+      stage,
     });
 
     return new Response(
@@ -1655,30 +1798,32 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     );
   }
 
-  const summaryRefresh = await refreshCallReceptionSummary({
-    call: artifactResult.updatedCall,
-    clinicName: clinicName ?? "ClinicFlow clinic",
-    connection: auth.connection,
-    lead: artifactResult.lead ?? null,
-  });
+  after(async () => {
+    const summaryRefresh = await refreshCallReceptionSummary({
+      call: artifactResult.updatedCall,
+      clinicName: clinicName ?? "ClinicFlow clinic",
+      connection: auth.connection,
+      lead: artifactResult.lead ?? null,
+    });
 
-  if (summaryRefresh.error || !summaryRefresh.summary) {
-    logTwilioError("voice_speech_summary_failed", summaryRefresh.error ?? "Missing AI summary for speech webhook", {
-      callSid: artifactResult.updatedCall.provider_call_id ?? auth.payload.CallSid,
-      clinicId: auth.connection.clinic_id,
-    });
-    await recordWebhookEvent({
-      clinicId: auth.connection.clinic_id,
-      errorMessage: summaryRefresh.error ?? "Missing AI summary for speech webhook",
-      eventType: "twilio.voice_speech.failed",
-      idempotencyKey: `${stageEventId}-summary`,
-      payload: auth.payload,
-      processingStatus: "failed",
-      processedAt: new Date().toISOString(),
-      providerEventId: auth.payload.CallSid ?? null,
-      receivedAt,
-    });
-  }
+    if (summaryRefresh.error || !summaryRefresh.summary) {
+      logTwilioError("voice_speech_summary_failed", summaryRefresh.error ?? "Missing AI summary for speech webhook", {
+        callSid: artifactResult.updatedCall.provider_call_id ?? auth.payload.CallSid,
+        clinicId: auth.connection.clinic_id,
+      });
+      await recordWebhookEvent({
+        clinicId: auth.connection.clinic_id,
+        errorMessage: summaryRefresh.error ?? "Missing AI summary for speech webhook",
+        eventType: "twilio.voice_speech.failed",
+        idempotencyKey: `${stageEventId}-summary`,
+        payload: auth.payload,
+        processingStatus: "failed",
+        processedAt: new Date().toISOString(),
+        providerEventId: auth.payload.CallSid ?? null,
+        receivedAt,
+      });
+    }
+  });
 
   if (stage === "booking-day" || (stage === "wrap-up" && bookingIntent && isBookingSpeechText(speechText))) {
     const nextUrl = buildSpeechActionUrl({
@@ -1690,15 +1835,17 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       stage: "booking-time",
     });
 
-    await recordWebhookEvent({
+    const responseText = "Of course. What time would suit you best?";
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.triaged",
       idempotencyKey: stageEventId,
       payload: auth.payload,
       processingStatus: "processed",
-      processedAt: new Date().toISOString(),
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
+      stage,
     });
 
     return new Response(
@@ -1707,7 +1854,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         callerId,
         clinicName,
         forwardToNumber,
-        promptText: "Of course. What time would suit you best?",
+        promptText: responseText,
       }),
       {
         headers: {
@@ -1731,15 +1878,17 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       stage: "booking-kind",
     });
 
-    await recordWebhookEvent({
+    const responseText = "Thank you. Is this urgent, or is it routine?";
+    await recordVoiceSpeechTurn({
+      assistantResponseText: responseText,
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.triaged",
       idempotencyKey: stageEventId,
       payload: auth.payload,
       processingStatus: "processed",
-      processedAt: new Date().toISOString(),
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
+      stage,
     });
 
     return new Response(
@@ -1748,7 +1897,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         callerId,
         clinicName,
         forwardToNumber,
-        promptText: "Thank you. Is this urgent, or is it routine?",
+        promptText: responseText,
       }),
       {
         headers: {
@@ -1805,15 +1954,16 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         treatmentType,
       });
 
-      await recordWebhookEvent({
+      await recordVoiceSpeechTurn({
+        assistantResponseText: followUpResponseText,
         clinicId: auth.connection.clinic_id,
         eventType: "twilio.voice_speech.completed",
         idempotencyKey: stageEventId,
         payload: auth.payload,
         processingStatus: "processed",
-        processedAt: new Date().toISOString(),
         providerEventId: auth.payload.CallSid ?? null,
         receivedAt,
+        stage,
       });
 
       return new Response(
@@ -1845,15 +1995,17 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
       stage: "booking-confirm",
     });
 
-    await recordWebhookEvent({
+    const offerText = `I can offer ${slot.label}. Would you like me to book that for you?`;
+    await recordVoiceSpeechTurn({
+      assistantResponseText: offerText,
       clinicId: auth.connection.clinic_id,
       eventType: "twilio.voice_speech.triaged",
       idempotencyKey: stageEventId,
       payload: auth.payload,
       processingStatus: "processed",
-      processedAt: new Date().toISOString(),
       providerEventId: auth.payload.CallSid ?? null,
       receivedAt,
+      stage,
     });
 
     return new Response(
@@ -1862,7 +2014,7 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         callerId,
         clinicName,
         forwardToNumber,
-        offerText: `I can offer ${slot.label}. Would you like me to book that for you?`,
+        offerText,
       }),
       {
         headers: {
@@ -1889,15 +2041,16 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
         })
       : nextPrompt;
 
-  await recordWebhookEvent({
+  await recordVoiceSpeechTurn({
+    assistantResponseText: followUpResponseText,
     clinicId: auth.connection.clinic_id,
     eventType: stage === "collect-details" ? "twilio.voice_speech.completed" : "twilio.voice_speech.triaged",
     idempotencyKey: stageEventId,
     payload: auth.payload,
     processingStatus: "processed",
-    processedAt: new Date().toISOString(),
     providerEventId: auth.payload.CallSid ?? null,
     receivedAt,
+    stage,
   });
 
   if (details.breathingOrSwallowingIssue) {
@@ -1923,10 +2076,10 @@ export async function handleTwilioVoiceSpeechWebhook(request: NextRequest) {
     return new Response(
       `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="auto" timeout="4">
+  <Gather action="${followUpUrl}" actionOnEmptyResult="true" bargeIn="true" enhanced="true" input="speech" method="POST" speechModel="phone_call" speechTimeout="${TWILIO_GATHER_SPEECH_TIMEOUT_SECONDS}" timeout="${TWILIO_GATHER_TIMEOUT_SECONDS}">
     ${buildSayTwiml(followUpResponseText)}
   </Gather>
-  ${buildSayTwiml(["Thank you for that.", "I will make sure it is noted. Have a lovely day."])}
+  ${buildSayTwiml(["Thank you for calling.", "The practice will contact you by text or phone."])}
 </Response>`,
       {
         headers: {

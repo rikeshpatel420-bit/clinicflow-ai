@@ -8,6 +8,7 @@ const knowledgeBase = clinicFlowPlatformProfile.knowledgeBase;
 const bannedPhrases = [
   "I've made a note",
   "I've noted",
+  "I've got what I need",
   "team will review",
   "team will follow up",
   "team will take it from here",

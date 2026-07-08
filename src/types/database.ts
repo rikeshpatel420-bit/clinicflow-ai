@@ -931,6 +931,8 @@ export type Database = {
           lead_id: string | null;
           call_id: string | null;
           recovery_workflow_id: string | null;
+          appointment_id: string | null;
+          booking_reference: string | null;
           provider: "twilio" | "manual";
           provider_message_id: string | null;
           direction: "inbound" | "outbound";
@@ -950,6 +952,8 @@ export type Database = {
           lead_id?: string | null;
           call_id?: string | null;
           recovery_workflow_id?: string | null;
+          appointment_id?: string | null;
+          booking_reference?: string | null;
           provider?: "twilio" | "manual";
           provider_message_id?: string | null;
           direction: "inbound" | "outbound";
@@ -969,6 +973,8 @@ export type Database = {
           lead_id?: string | null;
           call_id?: string | null;
           recovery_workflow_id?: string | null;
+          appointment_id?: string | null;
+          booking_reference?: string | null;
           provider?: "twilio" | "manual";
           provider_message_id?: string | null;
           direction?: "inbound" | "outbound";

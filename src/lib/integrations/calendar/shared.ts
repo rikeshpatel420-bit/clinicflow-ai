@@ -83,10 +83,13 @@ function nextWeekdayDate(base: Date, targetWeekday: number, forceFollowingWeek: 
   value.setHours(0, 0, 0, 0);
   const currentWeekday = value.getDay();
   let daysAhead = (targetWeekday - currentWeekday + 7) % 7;
-  if (daysAhead === 0 || forceFollowingWeek) {
+  if (daysAhead === 0) {
     daysAhead += 7;
   }
   value.setDate(value.getDate() + daysAhead);
+  if (forceFollowingWeek) {
+    value.setDate(value.getDate() + 7);
+  }
   return value;
 }
 
@@ -114,17 +117,27 @@ export function resolvePreferredStart(input: { now: Date; preferredTimeText?: st
 
   const weekdayMatch = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
   const weekday = weekdayMatch ? getWeekdayIndex(weekdayMatch[1]) : null;
-  const forceNext = /\bnext\b/.test(text);
+  const forceFollowingWeek = /\b(tuesday week|monday week|wednesday week|thursday week|friday week|saturday week|sunday week|after next)\b/.test(text);
   const explicitDateMatch = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/);
-  const date = explicitDateMatch
+  let date = explicitDateMatch
     ? new Date(input.now.getFullYear(), getMonthIndex(explicitDateMatch[2]), Number(explicitDateMatch[1]), 0, 0, 0, 0)
     : weekday !== null
-      ? nextWeekdayDate(input.now, weekday, forceNext)
+      ? nextWeekdayDate(input.now, weekday, forceFollowingWeek)
       : new Date(input.now.getTime());
 
   if (explicitDateMatch && date < input.now) {
     date.setFullYear(date.getFullYear() + 1);
   }
+
+  if (!explicitDateMatch && weekday === null && /\btomorrow\b/.test(text)) {
+    date = new Date(input.now.getTime());
+    date.setDate(date.getDate() + 1);
+  }
+
+  if (!explicitDateMatch && weekday === null && /\btoday\b|\bthis afternoon\b|\bthis morning\b|\bthis evening\b/.test(text)) {
+    date = new Date(input.now.getTime());
+  }
+
   const explicitTime =
     text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/) ??
     text.match(/\b(?:at|around|for)\s+(\d{1,2})(?::(\d{2}))?\b/) ??

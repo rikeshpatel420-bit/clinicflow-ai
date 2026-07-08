@@ -1,4 +1,4 @@
-import type { Appointment, BookingRequest, Call, Inserts, Patient, PatientLead, RecoveryWorkflow, SmsEvent } from "@/types/database";
+import type { Appointment, BookingRequest, Call, Inserts, Patient, PatientLead, RecoveryWorkflow } from "@/types/database";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { bookingRequestSummary, createOrUpdateBookingRequest } from "@/lib/bookings/requests";
 import { getCalendarAvailabilityForClinic, syncCalendarBookingCreation } from "@/lib/integrations/calendar/service";
@@ -48,6 +48,7 @@ type CalendarBookingInput = {
   nextStep: string;
   notes: string;
   patient?: Patient | null;
+  patientNameOverride?: string | null;
   patientPhoneOverride?: string | null;
   preferredTime?: string | null;
   source: CalendarBookingSource;
@@ -67,6 +68,7 @@ export type BookingRequestAppointmentInput = {
   lead?: PatientLead | null;
   notes: string;
   patient?: Patient | null;
+  patientNameOverride?: string | null;
   patientPhoneOverride?: string | null;
   preferredTime?: string | null;
   source: CalendarBookingSource;
@@ -118,8 +120,10 @@ async function recordAppointmentConfirmationSms(input: {
   const admin = createSupabaseAdminClient();
   const smsSendingEnabled = hasConfiguredTwilioSmsSender();
   const clinicName = input.clinicName?.trim() || "CF Dental";
-  const body = `Your appointment at ${clinicName} is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. Reply CANCEL if you need to cancel.`;
-  const { error } = await admin.from("sms_events").insert({
+  const body = `${clinicName}: Your appointment is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. If you need to amend this appointment, please contact the practice.`;
+  const smsPayload: Inserts<"sms_events"> = {
+    appointment_id: input.appointment.id,
+    booking_reference: input.confirmationReference,
     body_preview: body,
     call_id: input.call?.id ?? null,
     clinic_id: input.clinicId,
@@ -133,7 +137,17 @@ async function recordAppointmentConfirmationSms(input: {
     status: "queued",
     to_number_hash: input.patientPhone ? hashPhoneNumber(input.patientPhone) : null,
     to_number_last4: normalizePhoneNumber(input.patientPhone)?.slice(-4) ?? null,
-  } satisfies Partial<SmsEvent>);
+  };
+
+  let { error } = await admin.from("sms_events").insert(smsPayload);
+
+  if (error && /appointment_id|booking_reference|schema cache/i.test(error.message)) {
+    const compatibilityPayload: Inserts<"sms_events"> = { ...smsPayload };
+    delete compatibilityPayload.appointment_id;
+    delete compatibilityPayload.booking_reference;
+    const compatibilityInsert = await admin.from("sms_events").insert(compatibilityPayload);
+    error = compatibilityInsert.error;
+  }
 
   if (error) {
     logTwilioDbWriteFailure("appointment_confirmation_sms_failed", error, {
@@ -267,7 +281,7 @@ async function updateBookingArtifacts(input: {
 
 export async function bookCalendarAppointment(input: CalendarBookingInput): Promise<CalendarBookingResult> {
   const admin = createSupabaseAdminClient();
-  const patientName = input.patient?.full_name ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
+  const patientName = input.patient?.full_name ?? input.patientNameOverride?.trim() ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
   const patientEmail = input.patient?.email ?? null;
   const patientPhone = normalizePhoneNumber(input.patient?.phone ?? input.patientPhoneOverride ?? null);
   const slot = await safeSlotSearch({
@@ -430,7 +444,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
 
 export async function confirmCalendarBookingRequest(input: BookingRequestAppointmentInput): Promise<CalendarBookingResult> {
   const admin = createSupabaseAdminClient();
-  const patientName = input.patient?.full_name ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
+  const patientName = input.patient?.full_name ?? input.patientNameOverride?.trim() ?? input.lead?.enquiry_summary?.split(".")[0]?.trim() ?? "Incoming caller";
   const patientEmail = input.patient?.email ?? null;
   const patientPhone = normalizePhoneNumber(input.patient?.phone ?? input.patientPhoneOverride ?? null);
   const slot = await safeSlotSearch({

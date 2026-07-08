@@ -93,11 +93,36 @@ assert.equal(isVoiceBookingRequestText("How much is a hygienist appointment?"), 
 assert.equal(isVoiceBookingRequestText("Could you send me a text confirmation?"), false, "SMS confirmation requests should not be treated as booking requests.");
 assert.equal(isVoiceBookingRequestText("Can I reschedule my appointment to Tuesday?"), true, "Reschedule requests should remain bookable.");
 
-const forensicBaseDate = new Date(2026, 6, 7, 14, 0, 0, 0);
+const forensicBaseDate = new Date(2026, 6, 8, 14, 0, 0, 0);
 assert.equal(
   resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "next Tuesday morning" })?.toDateString(),
   new Date(2026, 6, 14, 9, 0, 0, 0).toDateString(),
-  "Next Tuesday should resolve to the following Tuesday, not today.",
+  "From Wednesday 8 July 2026, next Tuesday should resolve to Tuesday 14 July 2026.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "next week Tuesday morning" })?.toDateString(),
+  new Date(2026, 6, 14, 9, 0, 0, 0).toDateString(),
+  "Next week Tuesday should resolve to the next upcoming Tuesday in caller language.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "Tuesday week morning" })?.toDateString(),
+  new Date(2026, 6, 21, 9, 0, 0, 0).toDateString(),
+  "Tuesday week should resolve to Tuesday 21 July 2026.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "Tuesday after next morning" })?.toDateString(),
+  new Date(2026, 6, 21, 9, 0, 0, 0).toDateString(),
+  "Tuesday after next should resolve to Tuesday 21 July 2026.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "tomorrow morning" })?.toDateString(),
+  new Date(2026, 6, 9, 9, 0, 0, 0).toDateString(),
+  "Tomorrow morning should resolve to the following day.",
+);
+assert.equal(
+  resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "this afternoon" })?.getHours(),
+  14,
+  "This afternoon should resolve to 14:00 today.",
 );
 assert.equal(
   resolvePreferredStart({ now: forensicBaseDate, preferredTimeText: "14th of July 9am" })?.getDate(),

@@ -241,6 +241,8 @@ const demoLiveSnapshot: LiveSnapshot = {
       lead_id: "88888888-8888-4888-8888-888888888882",
       call_id: "88888888-8888-4888-8888-888888888881",
       recovery_workflow_id: "workflow-demo-1",
+      appointment_id: null,
+      booking_reference: null,
       provider: "twilio",
       provider_message_id: "SM-demo-1",
       direction: "outbound",

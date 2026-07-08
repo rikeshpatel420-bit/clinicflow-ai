@@ -78,18 +78,21 @@ export function AppointmentsPanel({
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-[#41524c] dark:text-slate-300">
                       <p>
-                        <span className="font-medium text-[#10201d] dark:text-white">When:</span>{" "}
+                        <span className="font-medium text-[#10201d] dark:text-white">Start:</span>{" "}
                         {formatDateTime(appointment.appointment_start)}
                       </p>
                       <p>
-                        <span className="font-medium text-[#10201d] dark:text-white">Until:</span>{" "}
+                        <span className="font-medium text-[#10201d] dark:text-white">Finish:</span>{" "}
                         {formatDateTime(appointment.appointment_end)}
                       </p>
                       <p>
                         <span className="font-medium text-[#10201d] dark:text-white">Type:</span>{" "}
                         {formatLabel(appointment.treatment_type)}
                       </p>
-                      <p className="text-xs text-[#65736f] dark:text-slate-400">{appointment.notes ?? "Confirmed from the AI call flow."}</p>
+                      <p>
+                        <span className="font-medium text-[#10201d] dark:text-white">Source:</span>{" "}
+                        {formatLabel(appointment.source)}
+                      </p>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
                       <form action={cancelAppointmentAction}>

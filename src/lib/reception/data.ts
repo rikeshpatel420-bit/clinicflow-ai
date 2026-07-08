@@ -105,14 +105,21 @@ export type ReceptionQueueKind = "booking_request" | "urgent_enquiry" | "missed_
 export type ReceptionQueueItem = {
   appointmentEnd: string | null;
   appointmentId: string | null;
+  appointmentType: string;
   bookingRequestId: string | null;
   callId: string | null;
   confirmationReference: string | null;
+  confirmedDate: string | null;
+  confirmedTime: string | null;
+  conversation: string | null;
   id: string;
   kind: ReceptionQueueKind;
   leadId: string | null;
   nextStep: string | null;
   patientLabel: string;
+  patientPhone: string | null;
+  preferredDate: string | null;
+  preferredTime: string | null;
   scheduledAt: string | null;
   snippet: string;
   status: string;
@@ -452,6 +459,34 @@ function summarizeText(value: string | null | undefined, fallback: string) {
   return text.length > 150 ? `${text.slice(0, 147)}...` : text;
 }
 
+function formatQueueDate(value: string | null | undefined) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Europe/London",
+    weekday: "short",
+  }).format(new Date(value));
+}
+
+function formatQueueTime(value: string | null | undefined) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    timeZone: "Europe/London",
+  }).format(new Date(value));
+}
+
+function phoneLabel(value: string | null | undefined) {
+  return value ? `Ending ${value}` : null;
+}
+
+function conversationText(...values: Array<string | null | undefined>) {
+  return summarizeText(values.find((value) => value?.trim()) ?? null, "").trim() || null;
+}
+
 function formatLabel(value: string | null | undefined, fallback: string) {
   const text = value?.trim();
   if (!text) {
@@ -548,9 +583,13 @@ function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
       return {
         appointmentEnd: appointment?.appointment_end ?? null,
         appointmentId: appointment?.id ?? null,
+        appointmentType: formatLabel(request.booking_type, "Booking request"),
         bookingRequestId: request.id,
         callId: request.call_id,
         confirmationReference: appointment?.confirmation_reference ?? request.confirmation_reference,
+        confirmedDate: formatQueueDate(appointment?.appointment_start),
+        confirmedTime: formatQueueTime(appointment?.appointment_start),
+        conversation: conversationText(transcript?.summary, transcript?.transcript_text, request.notes, lead?.enquiry_summary),
         id: request.id,
         kind: "booking_request",
         leadId: request.lead_id,
@@ -559,9 +598,12 @@ function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
           lead?.enquiry_summary ?? (call?.caller_number_last4 ? `Caller ending ${call.caller_number_last4}` : null),
           `Booking request ${request.confirmation_reference}`,
         ),
+        patientPhone: phoneLabel(call?.caller_number_last4),
+        preferredDate: request.preferred_time ?? null,
+        preferredTime: request.preferred_time ?? null,
         scheduledAt: appointment?.appointment_start ?? null,
         snippet: summarizeText(
-          request.next_step ?? request.notes ?? transcript?.summary ?? transcript?.transcript_text ?? lead?.enquiry_summary,
+          request.next_step ?? `${formatLabel(request.booking_type, "Booking request")} waiting for confirmation.`,
           "Booking request captured from the call.",
         ),
         status: request.status,
@@ -594,17 +636,24 @@ function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
       return {
         appointmentEnd: appointment?.appointment_end ?? null,
         appointmentId: appointment?.id ?? null,
+        appointmentType: appointment?.treatment_type ? formatLabel(appointment.treatment_type, "Urgent enquiry") : formatLabel(bookingRequest?.booking_type ?? lead.source, "Urgent enquiry"),
         bookingRequestId: bookingRequest?.id ?? null,
         callId: relatedCall?.id ?? null,
         confirmationReference: appointment?.confirmation_reference ?? bookingRequest?.confirmation_reference ?? null,
+        confirmedDate: formatQueueDate(appointment?.appointment_start),
+        confirmedTime: formatQueueTime(appointment?.appointment_start),
+        conversation: conversationText(transcript?.summary, transcript?.transcript_text, lead.enquiry_summary),
         id: lead.id,
         kind: "urgent_enquiry",
         leadId: lead.id,
         nextStep: bookingRequest?.next_step ?? null,
         patientLabel: formatPatientLabel(lead.enquiry_summary, `Lead ${lead.id.slice(0, 8)}`),
+        patientPhone: phoneLabel(relatedCall?.caller_number_last4),
+        preferredDate: bookingRequest?.preferred_time ?? null,
+        preferredTime: bookingRequest?.preferred_time ?? null,
         scheduledAt: appointment?.appointment_start ?? null,
         snippet: summarizeText(
-          lead.enquiry_summary ?? transcript?.summary ?? transcript?.transcript_text ?? bookingRequest?.next_step,
+          bookingRequest?.next_step ?? lead.enquiry_summary,
           "Urgent enquiry captured from the call.",
         ),
         status: lead.status,
@@ -634,17 +683,24 @@ function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
       return {
         appointmentEnd: appointment?.appointment_end ?? null,
         appointmentId: appointment?.id ?? null,
+        appointmentType: appointment?.treatment_type ? formatLabel(appointment.treatment_type, "Call follow-up") : formatLabel(bookingRequest?.booking_type ?? call.status, "Call follow-up"),
         bookingRequestId: bookingRequest?.id ?? null,
         callId: call.id,
         confirmationReference: appointment?.confirmation_reference ?? bookingRequest?.confirmation_reference ?? null,
+        confirmedDate: formatQueueDate(appointment?.appointment_start),
+        confirmedTime: formatQueueTime(appointment?.appointment_start),
+        conversation: conversationText(transcript?.summary, transcript?.transcript_text, voicemail?.summary, voicemail?.transcript_text),
         id: call.id,
         kind: "missed_call",
         leadId: lead?.id ?? null,
         nextStep: call.recovery_next_action,
         patientLabel: formatPatientLabel(lead?.enquiry_summary ?? (call.caller_number_last4 ? `Caller ending ${call.caller_number_last4}` : null), `Call ${call.id.slice(0, 8)}`),
+        patientPhone: phoneLabel(call.caller_number_last4),
+        preferredDate: bookingRequest?.preferred_time ?? null,
+        preferredTime: bookingRequest?.preferred_time ?? null,
         scheduledAt: appointment?.appointment_start ?? null,
         snippet: summarizeText(
-          transcript?.summary ?? transcript?.transcript_text ?? voicemail?.summary ?? voicemail?.transcript_text ?? call.recovery_next_action,
+          call.recovery_next_action,
           "Missed call queued for follow-up.",
         ),
         status: call.recovery_status ?? call.status,
@@ -673,17 +729,24 @@ function buildReceptionQueues(input: LiveSnapshot): ReceptionQueues {
       return {
         appointmentEnd: appointment.appointment_end,
         appointmentId: appointment.id,
+        appointmentType: formatLabel(appointment.treatment_type, "Confirmed appointment"),
         bookingRequestId: appointment.booking_request_id,
         callId: appointment.call_id,
         confirmationReference: appointment.confirmation_reference,
+        confirmedDate: formatQueueDate(appointment.appointment_start),
+        confirmedTime: formatQueueTime(appointment.appointment_start),
+        conversation: conversationText(transcript?.summary, transcript?.transcript_text, bookingRequest?.notes, appointment.notes),
         id: appointment.id,
         kind: "appointment",
         leadId: appointment.lead_id,
         nextStep: bookingRequest?.next_step ?? appointment.notes,
         patientLabel: formatPatientLabel(appointment.patient_name ?? lead?.enquiry_summary ?? null, `Appointment ${appointment.confirmation_reference}`),
+        patientPhone: appointment.patient_phone ? `Ending ${appointment.patient_phone.replace(/\D/g, "").slice(-4)}` : phoneLabel(call?.caller_number_last4),
+        preferredDate: bookingRequest?.preferred_time ?? null,
+        preferredTime: bookingRequest?.preferred_time ?? null,
         scheduledAt: appointment.appointment_start,
         snippet: summarizeText(
-          appointment.notes ?? bookingRequest?.next_step ?? transcript?.summary ?? transcript?.transcript_text,
+          bookingRequest?.next_step ?? "Confirmed appointment ready for the diary.",
           "Confirmed appointment ready for the diary.",
         ),
         status: appointment.status,

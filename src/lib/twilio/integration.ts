@@ -1293,7 +1293,7 @@ async function upsertVoiceTriageArtifacts(input: {
       bookingRequest = bookingResult.bookingRequest;
       appointment = bookingResult.appointment;
       bookingConfirmed = bookingResult.confirmed;
-      bookingSlotLabel = bookingResult.slot?.label ?? null;
+      bookingSlotLabel = bookingResult.appointment ? humanSlotLabel(bookingResult.appointment.appointment_start) : null;
       smsConfirmationStatus = bookingResult.smsConfirmation.status;
     }
   }

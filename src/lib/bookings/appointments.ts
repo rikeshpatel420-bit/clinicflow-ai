@@ -59,6 +59,8 @@ type CalendarBookingInput = {
   clinicName?: string | null;
 };
 
+const DEFAULT_CLINIC_TIMEZONE = "Europe/London";
+
 export type BookingRequestAppointmentInput = {
   bookingRequest: BookingRequest;
   call?: Call | null;
@@ -108,6 +110,51 @@ export async function findNextAvailableAppointmentSlot(input: BookingScheduleInp
     : null;
 }
 
+export function appointmentConfirmationSmsIdempotencyKey(appointmentId: string) {
+  return `appointment-confirmation-${appointmentId}`;
+}
+
+export function formatAppointmentStartForPatient(value: string, timeZone?: string | null) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "long",
+    timeZone: timeZone ?? DEFAULT_CLINIC_TIMEZONE,
+    weekday: "long",
+  })
+    .format(new Date(value))
+    .replace(/^(\w+), /, "$1 ");
+}
+
+export function buildAppointmentConfirmationSmsBody(input: {
+  appointmentStart: string;
+  clinicName?: string | null;
+  confirmationReference: string;
+  timeZone?: string | null;
+}) {
+  const clinicName = input.clinicName?.trim() || "CF Dental";
+  const slotLabel = formatAppointmentStartForPatient(input.appointmentStart, input.timeZone);
+  return `${clinicName}: Your appointment is confirmed for ${slotLabel}. Reference: ${input.confirmationReference}. If you need to amend this appointment, please contact the practice.`;
+}
+
+function smsConfirmationStatusFromExisting(status: string | null) {
+  if (status === "sent" || status === "delivered") {
+    return { error: null, logged: true, sent: true, status: "sent" as const };
+  }
+
+  if (status === "queued") {
+    return { error: null, logged: true, sent: false, status: "logged" as const };
+  }
+
+  if (status === "failed") {
+    return { error: "Appointment confirmation SMS was already attempted and failed.", logged: true, sent: false, status: "failed" as const };
+  }
+
+  return { error: null, logged: true, sent: false, status: "logged" as const };
+}
+
 async function recordAppointmentConfirmationSms(input: {
   appointment: Appointment;
   call?: Call | null;
@@ -115,12 +162,65 @@ async function recordAppointmentConfirmationSms(input: {
   clinicName?: string | null;
   confirmationReference: string;
   patientPhone: string | null;
-  slotLabel: string;
+  timeZone?: string | null;
 }) {
   const admin = createSupabaseAdminClient();
   const smsSendingEnabled = hasConfiguredTwilioSmsSender();
-  const clinicName = input.clinicName?.trim() || "CF Dental";
-  const body = `${clinicName}: Your appointment is confirmed for ${input.slotLabel}. Reference: ${input.confirmationReference}. If you need to amend this appointment, please contact the practice.`;
+  const idempotencyKey = appointmentConfirmationSmsIdempotencyKey(input.appointment.id);
+  const body = buildAppointmentConfirmationSmsBody({
+    appointmentStart: input.appointment.appointment_start,
+    clinicName: input.clinicName,
+    confirmationReference: input.confirmationReference,
+    timeZone: input.timeZone,
+  });
+
+  const existingByAppointment = await admin
+    .from("sms_events")
+    .select("id,status,error_message,provider_message_id")
+    .eq("clinic_id", input.clinicId)
+    .eq("direction", "outbound")
+    .eq("appointment_id", input.appointment.id)
+    .order("occurred_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ error_message: string | null; id: string; provider_message_id: string | null; status: string | null }>();
+
+  if (existingByAppointment.data) {
+    return smsConfirmationStatusFromExisting(existingByAppointment.data.status);
+  }
+
+  if (existingByAppointment.error && !/appointment_id|schema cache/i.test(existingByAppointment.error.message)) {
+    logTwilioDbWriteFailure("appointment_confirmation_sms_lookup_failed", existingByAppointment.error, {
+      appointmentId: input.appointment.id,
+      clinicId: input.clinicId,
+      operation: "select",
+      table: "sms_events",
+    });
+  }
+
+  const existingByReference = await admin
+    .from("sms_events")
+    .select("id,status,error_message,provider_message_id")
+    .eq("clinic_id", input.clinicId)
+    .eq("direction", "outbound")
+    .eq("booking_reference", input.confirmationReference)
+    .order("occurred_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ error_message: string | null; id: string; provider_message_id: string | null; status: string | null }>();
+
+  if (existingByReference.data) {
+    return smsConfirmationStatusFromExisting(existingByReference.data.status);
+  }
+
+  if (existingByReference.error && !/booking_reference|schema cache/i.test(existingByReference.error.message)) {
+    logTwilioDbWriteFailure("appointment_confirmation_sms_reference_lookup_failed", existingByReference.error, {
+      appointmentId: input.appointment.id,
+      bookingReference: input.confirmationReference,
+      clinicId: input.clinicId,
+      operation: "select",
+      table: "sms_events",
+    });
+  }
+
   const smsPayload: Inserts<"sms_events"> = {
     appointment_id: input.appointment.id,
     booking_reference: input.confirmationReference,
@@ -132,7 +232,7 @@ async function recordAppointmentConfirmationSms(input: {
     lead_id: input.appointment.lead_id ?? input.call?.lead_id ?? null,
     occurred_at: new Date().toISOString(),
     provider: smsSendingEnabled ? "twilio" : "manual",
-    provider_message_id: `appointment-confirmation-${input.appointment.id}`,
+    provider_message_id: idempotencyKey,
     recovery_workflow_id: null,
     status: "queued",
     to_number_hash: input.patientPhone ? hashPhoneNumber(input.patientPhone) : null,
@@ -182,7 +282,7 @@ async function recordAppointmentConfirmationSms(input: {
         status: "failed",
       })
       .eq("clinic_id", input.clinicId)
-      .eq("provider_message_id", `appointment-confirmation-${input.appointment.id}`);
+      .eq("provider_message_id", idempotencyKey);
 
     if (smsUpdateError) {
       logTwilioDbWriteFailure("appointment_confirmation_sms_status_update_failed", smsUpdateError, {
@@ -200,11 +300,10 @@ async function recordAppointmentConfirmationSms(input: {
     const { error: smsUpdateError } = await admin
       .from("sms_events")
       .update({
-        provider_message_id: sendResult.messageSid,
         status: "sent",
       })
       .eq("clinic_id", input.clinicId)
-      .eq("provider_message_id", `appointment-confirmation-${input.appointment.id}`);
+      .eq("provider_message_id", idempotencyKey);
 
     if (smsUpdateError) {
       logTwilioDbWriteFailure("appointment_confirmation_sms_status_update_failed", smsUpdateError, {
@@ -381,7 +480,7 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
         const { error: bookingUpdateError } = await admin
           .from("booking_requests")
           .update({
-            next_step: `Appointment confirmed for ${slot.label}. Reference: ${bookingRequest.bookingRequest.confirmation_reference}.`,
+            next_step: `Appointment confirmed for ${formatAppointmentStartForPatient(appointment.appointment_start)}. Reference: ${bookingRequest.bookingRequest.confirmation_reference}.`,
             status: "confirmed",
             updated_at: new Date().toISOString(),
           })
@@ -404,7 +503,6 @@ export async function bookCalendarAppointment(input: CalendarBookingInput): Prom
           clinicName: input.clinicName,
           confirmationReference: bookingRequest.bookingRequest.confirmation_reference,
           patientPhone,
-          slotLabel: slot.label,
         });
 
         await syncCalendarBookingCreation({
@@ -510,7 +608,7 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
         const { error: bookingUpdateError } = await admin
           .from("booking_requests")
           .update({
-            next_step: `Appointment confirmed for ${slot.label}. Reference: ${input.bookingRequest.confirmation_reference}.`,
+            next_step: `Appointment confirmed for ${formatAppointmentStartForPatient(appointment.appointment_start)}. Reference: ${input.bookingRequest.confirmation_reference}.`,
             status: "confirmed",
             updated_at: new Date().toISOString(),
           })
@@ -533,7 +631,6 @@ export async function confirmCalendarBookingRequest(input: BookingRequestAppoint
           clinicName: input.clinicName,
           confirmationReference: input.bookingRequest.confirmation_reference,
           patientPhone,
-          slotLabel: slot.label,
         });
 
         await syncCalendarBookingCreation({

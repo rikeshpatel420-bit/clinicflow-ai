@@ -22,6 +22,15 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+function Field({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7b76]">{label}</dt>
+      <dd className="mt-1 text-sm leading-6 text-[#10201d]">{value || "Not captured"}</dd>
+    </div>
+  );
+}
+
 function sectionToneClass(kind: ReceptionQueueItem["kind"]) {
   switch (kind) {
     case "booking_request":
@@ -140,25 +149,22 @@ function QueueCard({ title, description, items, emptyTitle, emptyMessage }: { ti
               </div>
 
               <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7b76]">Summary</dt>
-                  <dd className="mt-1 text-sm leading-6 text-[#10201d]">{item.snippet}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7b76]">Confirmation</dt>
-                  <dd className="mt-1 text-sm leading-6 text-[#10201d]">
-                    {item.confirmationReference ?? "Not confirmed yet"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7b76]">Status detail</dt>
-                  <dd className="mt-1 text-sm leading-6 text-[#10201d]">{item.nextStep ?? item.status}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7b76]">Scheduled</dt>
-                  <dd className="mt-1 text-sm leading-6 text-[#10201d]">{formatDateTime(item.scheduledAt)}</dd>
-                </div>
+                <Field label="Patient name" value={item.patientLabel} />
+                <Field label="Phone number" value={item.patientPhone} />
+                <Field label="Treatment" value={item.treatmentType} />
+                <Field label="Appointment type" value={item.appointmentType} />
+                <Field label="Preferred date" value={item.preferredDate} />
+                <Field label="Preferred time" value={item.preferredTime} />
+                <Field label="Confirmed date" value={item.confirmedDate} />
+                <Field label="Confirmed time" value={item.confirmedTime ?? formatDateTime(item.scheduledAt)} />
+                <Field label="Reference number" value={item.confirmationReference ?? "Not confirmed yet"} />
+                <Field label="Status" value={item.status.replace(/_/g, " ")} />
               </dl>
+
+              <details className="mt-4 rounded-2xl border border-[#edf2f0] bg-white/70 p-3 text-sm text-[#52615d]">
+                <summary className="cursor-pointer font-semibold text-[#10201d]">Conversation</summary>
+                <p className="mt-2 leading-6">{item.conversation ?? item.snippet}</p>
+              </details>
 
               <QueueItemActions item={item} />
             </article>

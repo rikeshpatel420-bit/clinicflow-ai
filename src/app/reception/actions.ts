@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { confirmCalendarBookingRequest, formatAppointmentSlotLabel } from "@/lib/bookings/appointments";
+import { buildAppointmentConfirmationSmsBody, confirmCalendarBookingRequest } from "@/lib/bookings/appointments";
 import { getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -122,6 +122,41 @@ function buildSimulationSmsBody(reference: string, target: "appointment" | "requ
   }
 
   return `Thanks for your booking request. The practice will confirm the exact time shortly. Reference: ${reference}.`;
+}
+
+async function appointmentConfirmationSmsAlreadyExists(input: { appointmentId: string | null; bookingReference: string | null; clinicId: string }) {
+  if (!input.appointmentId && !input.bookingReference) {
+    return false;
+  }
+
+  const admin = createSupabaseAdminClient();
+  const byAppointment = input.appointmentId
+    ? await admin
+        .from("sms_events")
+        .select("id")
+        .eq("clinic_id", input.clinicId)
+        .eq("direction", "outbound")
+        .eq("appointment_id", input.appointmentId)
+        .limit(1)
+        .maybeSingle<{ id: string }>()
+    : { data: null, error: null };
+
+  if (byAppointment.data) {
+    return true;
+  }
+
+  const byReference = input.bookingReference
+    ? await admin
+        .from("sms_events")
+        .select("id")
+        .eq("clinic_id", input.clinicId)
+        .eq("direction", "outbound")
+        .eq("booking_reference", input.bookingReference)
+        .limit(1)
+        .maybeSingle<{ id: string }>()
+    : { data: null, error: null };
+
+  return Boolean(byReference.data);
 }
 
 async function loadClinicNumberHash(admin: ReturnType<typeof createSupabaseAdminClient>, clinicId: string, callId: string | null) {
@@ -463,11 +498,14 @@ export async function sendReceptionSmsConfirmationSimulationAction(formData: For
     confirmationReference = appointment.confirmation_reference;
     callId = appointment.call_id ?? null;
     leadId = appointment.lead_id ?? null;
-    body = buildSimulationSmsBody(
-      appointment.confirmation_reference,
-      "appointment",
-      formatAppointmentSlotLabel(appointment.appointment_start, "Europe/London"),
-    );
+    if (await appointmentConfirmationSmsAlreadyExists({ appointmentId: appointment.id, bookingReference: appointment.confirmation_reference, clinicId: membership.clinic_id })) {
+      redirect("/reception?status=sms-sent");
+    }
+
+    body = buildAppointmentConfirmationSmsBody({
+      appointmentStart: appointment.appointment_start,
+      confirmationReference: appointment.confirmation_reference,
+    });
     const normalizedPhone = appointment.patient_phone?.replace(/\D/g, "") ?? null;
     toNumberLast4 = normalizedPhone?.slice(-4) ?? null;
     toNumberHash = hashPhoneNumber(normalizedPhone);
@@ -504,6 +542,8 @@ export async function sendReceptionSmsConfirmationSimulationAction(formData: For
   }
 
   const { error } = await admin.from("sms_events").insert({
+    appointment_id: appointmentId || null,
+    booking_reference: confirmationReference,
     body_preview: body,
     call_id: callId,
     clinic_id: membership.clinic_id,

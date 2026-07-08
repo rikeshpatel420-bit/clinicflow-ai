@@ -73,15 +73,22 @@ export type AppointmentRow = Pick<
 >;
 
 type LiveMetricTotals = {
+  aiHandledPercent: number;
+  averageCallDurationSeconds: number;
   bookingRequests: number;
   bookedLeads: number;
+  cancelledAppointments: number;
+  confirmedAppointments: number;
   recoveredLeads: number;
+  rescheduledAppointments: number;
+  revenueRecoveredPence: number;
   smsReplied: number;
   smsSent: number;
+  todaysAppointments: number;
   totalCalls: number;
   missedCalls: number;
   newLeads: number;
-  revenueRecoveredPence: number;
+  upcomingAppointments: number;
   recoveredCalls: number;
 };
 
@@ -144,53 +151,71 @@ function buildMetrics(snapshot: DashboardMetricSnapshot | null, liveTotals?: Liv
   const totalCalls = liveTotals?.totalCalls ?? 0;
   const missedCalls = snapshot?.missed_calls ?? liveTotals?.missedCalls ?? 0;
   const smsSent = snapshot?.sms_sent ?? liveTotals?.smsSent ?? 0;
-  const smsReplied = liveTotals?.smsReplied ?? 0;
-  const bookingRequests = Math.max(liveTotals?.bookingRequests ?? 0, liveTotals?.bookedLeads ?? 0);
+  const bookingRequests = liveTotals?.bookingRequests ?? 0;
   const recoveredLeads = liveTotals?.recoveredLeads ?? 0;
-  const recoveryRate = missedCalls > 0 ? Math.round((recoveredLeads / missedCalls) * 100) : 0;
+  const bookingsConverted = liveTotals?.confirmedAppointments ?? Math.max(liveTotals?.bookedLeads ?? 0, 0);
+  const recoveryRate = missedCalls > 0 ? Math.round(((liveTotals?.recoveredCalls ?? recoveredLeads) / missedCalls) * 100) : 0;
 
   return [
     {
-      change: snapshot ? `Period ending ${snapshot.period_end}` : "Live clinic total",
-      label: "Total calls",
-      tone: totalCalls > 0 ? "neutral" : "warning",
-      value: String(totalCalls),
+      change: "Confirmed today",
+      label: "Today's appointments",
+      tone: (liveTotals?.todaysAppointments ?? 0) > 0 ? "positive" : "neutral",
+      value: String(liveTotals?.todaysAppointments ?? 0),
     },
     {
-      change: snapshot ? `${missedCalls} missed` : "Live clinic total",
-      label: "Missed calls",
-      tone: missedCalls > 0 ? "warning" : "neutral",
-      value: String(missedCalls),
+      change: "Confirmed future diary",
+      label: "Upcoming",
+      tone: (liveTotals?.upcomingAppointments ?? 0) > 0 ? "positive" : "neutral",
+      value: String(liveTotals?.upcomingAppointments ?? 0),
     },
     {
-      change: snapshot ? `${smsSent} sent` : "Live SMS throughput",
+      change: "Cancelled appointments",
+      label: "Cancelled",
+      tone: (liveTotals?.cancelledAppointments ?? 0) > 0 ? "warning" : "neutral",
+      value: String(liveTotals?.cancelledAppointments ?? 0),
+    },
+    {
+      change: "Needs a new slot",
+      label: "Rescheduled",
+      tone: (liveTotals?.rescheduledAppointments ?? 0) > 0 ? "warning" : "neutral",
+      value: String(liveTotals?.rescheduledAppointments ?? 0),
+    },
+    {
+      change: "Booked lead value",
+      label: "Revenue",
+      tone: (liveTotals?.revenueRecoveredPence ?? 0) > 0 ? "positive" : "neutral",
+      value: `£${Math.round((liveTotals?.revenueRecoveredPence ?? 0) / 100).toLocaleString("en-GB")}`,
+    },
+    {
+      change: totalCalls > 0 ? "Across completed calls" : "Awaiting live calls",
+      label: "Average call duration",
+      tone: (liveTotals?.averageCallDurationSeconds ?? 0) > 0 ? "neutral" : "warning",
+      value: `${liveTotals?.averageCallDurationSeconds ?? 0}s`,
+    },
+    {
+      change: bookingRequests > 0 ? `${bookingRequests} total requests` : "No requests yet",
+      label: "Bookings converted",
+      tone: bookingsConverted > 0 ? "positive" : "neutral",
+      value: String(bookingsConverted),
+    },
+    {
+      change: `${recoveryRate}% of missed calls`,
+      label: "Missed call recovery",
+      tone: recoveryRate > 0 ? "positive" : "neutral",
+      value: `${recoveryRate}%`,
+    },
+    {
+      change: totalCalls > 0 ? "AI answered or recovered" : "Awaiting live calls",
+      label: "AI confidence",
+      tone: (liveTotals?.aiHandledPercent ?? 0) >= 70 ? "positive" : "neutral",
+      value: `${liveTotals?.aiHandledPercent ?? 0}%`,
+    },
+    {
+      change: snapshot ? `Period ending ${snapshot.period_end}` : "Live SMS throughput",
       label: "SMS sent",
       tone: smsSent > 0 ? "neutral" : "warning",
       value: String(smsSent),
-    },
-    {
-      change: smsReplied > 0 ? `${smsReplied} replies` : "Live reply tracking",
-      label: "SMS replied",
-      tone: smsReplied > 0 ? "positive" : "neutral",
-      value: String(smsReplied),
-    },
-    {
-      change: bookingRequests > 0 ? `${bookingRequests} requests` : "Live booking queue",
-      label: "Booking requests",
-      tone: bookingRequests > 0 ? "positive" : "neutral",
-      value: String(bookingRequests),
-    },
-    {
-      change: `${recoveredLeads} recovered`,
-      label: "Recovered leads",
-      tone: recoveredLeads > 0 ? "positive" : "neutral",
-      value: String(recoveredLeads),
-    },
-    {
-      change: `${recoveryRate}% of missed`,
-      label: "Recovery %",
-      tone: recoveryRate > 0 ? "positive" : "neutral",
-      value: `${recoveryRate}%`,
     },
   ];
 }
@@ -399,29 +424,44 @@ export async function getClinicDashboardData(user: Pick<User, "email" | "id" | "
   const missedCalls = missedCallsCount ?? (calls ?? []).filter((call) => ["missed", "voicemail", "abandoned"].includes(call.status)).length;
   const recoveredCalls = recoveredCallsCount ?? (calls ?? []).filter((call) => call.status === "recovered").length;
   const confirmedAppointments = (appointments ?? []).filter((appointment) => appointment.status === "confirmed").length;
+  const todaysAppointments = (appointments ?? []).filter((appointment) => appointment.status === "confirmed" && isToday(appointment.appointment_start)).length;
+  const upcomingAppointments = (appointments ?? []).filter((appointment) => appointment.status === "confirmed" && appointment.appointment_start > new Date().toISOString()).length;
+  const cancelledAppointments = (appointments ?? []).filter((appointment) => appointment.status === "cancelled").length;
+  const rescheduledAppointments = (appointments ?? []).filter((appointment) => appointment.status === "reschedule_needed").length;
   const bookingRequestCount = (bookingRequests ?? []).filter((request) => ["requested", "confirmed"].includes(request.status)).length;
   const smsSent = (smsEvents ?? []).filter((event) => event.direction === "outbound" && ["queued", "sent", "delivered"].includes(event.status)).length;
   const smsReplied = (smsEvents ?? []).filter((event) => event.direction === "inbound" && event.recovery_workflow_id !== null).length;
+  const completedDurations = (calls ?? []).map((call) => call.duration_seconds).filter((value): value is number => typeof value === "number" && value > 0);
+  const averageCallDurationSeconds = completedDurations.length
+    ? Math.round(completedDurations.reduce((total, value) => total + value, 0) / completedDurations.length)
+    : 0;
+  const callsToday = (calls ?? []).filter((call) => isToday(call.started_at)).length;
+  const aiHandledPercent = totalCalls > 0 ? Math.round(((totalCalls - missedCalls) / totalCalls) * 100) : 0;
   const liveTotals: LiveMetricTotals = {
+    aiHandledPercent,
+    averageCallDurationSeconds,
     bookingRequests: bookingRequestCount,
     bookedLeads: Math.max(confirmedAppointments, (leads ?? []).filter((lead) => lead.status === "booked" || lead.status === "won").length),
+    cancelledAppointments,
+    confirmedAppointments,
     recoveredLeads: (leads ?? []).filter((lead) => lead.status === "recovered").length,
+    rescheduledAppointments,
     smsReplied,
     smsSent,
+    todaysAppointments,
     missedCalls,
     recoveredCalls,
     totalCalls,
     newLeads: (leads ?? []).length,
+    upcomingAppointments,
     revenueRecoveredPence: (leads ?? [])
       .filter((lead) => lead.status === "booked" || lead.status === "won")
       .reduce((total, lead) => total + (lead.estimated_value_pence ?? 0), 0),
   };
-  const callsToday = (calls ?? []).filter((call) => isToday(call.started_at)).length;
   const unreadEnquiries = (leads ?? []).filter((lead) => lead.status === "new" || lead.status === "contacted").length;
   const outstandingTasks = (workflows ?? []).filter((workflow) =>
     ["queued", "waiting", "message_queued", "awaiting_patient_reply"].includes(workflow.state),
   ).length;
-  const aiHandledPercent = totalCalls > 0 ? Math.round(((totalCalls - missedCalls) / totalCalls) * 100) : 0;
 
   return {
     activity: buildActivity(workflows ?? []),

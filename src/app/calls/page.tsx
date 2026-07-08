@@ -5,7 +5,7 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { SiteHeader } from "@/components/navigation/site-header";
 import { addDemoCallAction } from "./actions";
-import { CallStatusBadge, RecoveryStatusBadge } from "./status-badge";
+import { CallStatusBadge } from "./status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -129,17 +129,20 @@ export default async function CallsPage({
             </div>
             {data.calls.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1120px] text-left text-sm">
+                <table className="w-full min-w-[1320px] text-left text-sm">
                   <thead className="bg-[#f7faf9] text-[#65736f]">
                     <tr>
                       <th className="px-5 py-3 font-semibold">Call</th>
                       <th className="px-5 py-3 font-semibold">Caller</th>
                       <th className="px-5 py-3 font-semibold">Intent</th>
+                      <th className="px-5 py-3 font-semibold">Outcome</th>
+                      <th className="px-5 py-3 font-semibold">Booked?</th>
+                      <th className="px-5 py-3 font-semibold">Reference</th>
                       <th className="px-5 py-3 font-semibold">Urgency</th>
-                      <th className="px-5 py-3 font-semibold">Transcript</th>
                       <th className="px-5 py-3 font-semibold">Status</th>
-                      <th className="px-5 py-3 font-semibold">Recovery</th>
                       <th className="px-5 py-3 font-semibold">Duration</th>
+                      <th className="px-5 py-3 font-semibold">Recording</th>
+                      <th className="px-5 py-3 font-semibold">Transcript</th>
                       <th className="px-5 py-3 font-semibold">Started</th>
                     </tr>
                   </thead>
@@ -163,22 +166,29 @@ export default async function CallsPage({
                             {call.intentLabel ?? "Unclear"}
                           </span>
                         </td>
+                        <td className="px-5 py-4 text-[#394642]">{call.outcomeLabel}</td>
+                        <td className="px-5 py-4 text-[#394642]">{call.booked ? "Yes" : "No"}</td>
+                        <td className="px-5 py-4 text-[#394642]">{call.bookingReference ?? "Not booked"}</td>
                         <td className="px-5 py-4 text-[#394642]">
                           <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${call.urgencyScore && call.urgencyScore >= 90 ? "border-[#f2dfd8] bg-[#fff9f6] text-[#9a3412]" : "border-[#dbe6e2] bg-white text-[#52615d]"}`}>
                             {call.urgencyScore ? `${call.urgencyScore}/100` : "—"}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-[#65736f]">
-                          <p className="max-w-[22rem] text-xs leading-6 text-[#52615d]">{call.transcriptPreview ?? "No transcript captured yet."}</p>
-                        </td>
                         <td className="px-5 py-4">
                           <CallStatusBadge status={call.status} />
                         </td>
-                        <td className="px-5 py-4">
-                          <RecoveryStatusBadge status={call.recovery_status} />
-                        </td>
                         <td className="px-5 py-4 text-[#394642]">
                           {call.duration_seconds ? `${call.duration_seconds}s` : "No duration"}
+                        </td>
+                        <td className="px-5 py-4">
+                          <Link href={`/calls/${call.id}`} className="font-semibold text-[#087968] hover:text-[#065f54]">
+                            {call.recordingLabel}
+                          </Link>
+                        </td>
+                        <td className="px-5 py-4">
+                          <Link href={`/calls/${call.id}`} className="rounded-full border border-[#cdd8d5] px-3 py-1.5 text-xs font-semibold text-[#10201d] hover:border-[#087968] hover:text-[#087968]">
+                            Open transcript
+                          </Link>
                         </td>
                         <td className="px-5 py-4 text-[#65736f]">
                           {new Date(call.started_at).toLocaleString("en-GB")}

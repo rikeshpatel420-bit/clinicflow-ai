@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import type { Call, CallRecording, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
+import type { Appointment, BookingRequest, Call, CallRecording, CallTranscript, Clinic, PatientLead, RecoveryWorkflow, SmsEvent, VoicemailMessage } from "@/types/database";
 import { parseCallReceptionSummary, type CallReceptionSummary } from "@/lib/ai/call-summary";
 import { classifyVoiceIntent, extractVoiceCaptureDetails, estimateVoiceUrgency, voiceIntentLabel } from "@/lib/twilio/voice-triage";
 import { demoClinic } from "@/lib/dashboard/data";
@@ -31,14 +31,20 @@ type LiveCallRow = Pick<
 >;
 
 type LiveTranscriptRow = Pick<CallTranscript, "call_id" | "summary" | "transcript_text" | "source" | "updated_at">;
+type LiveAppointmentRow = Pick<Appointment, "appointment_start" | "call_id" | "confirmation_reference" | "id" | "status">;
+type LiveBookingRequestRow = Pick<BookingRequest, "call_id" | "confirmation_reference" | "id" | "status">;
 
 type CallLead = Pick<PatientLead, "enquiry_summary" | "estimated_value_pence" | "id" | "priority" | "source" | "status">;
 
 export type CallRecord = LiveCallRow & {
+  booked: boolean;
+  bookingReference: string | null;
   callerLabel: string;
   estimatedValuePence: number | null;
   intentLabel: string | null;
   leadSummary: string | null;
+  outcomeLabel: string;
+  recordingLabel: string;
   transcriptPreview: string | null;
   urgencyScore: number | null;
 };
@@ -70,6 +76,8 @@ const now = new Date().toISOString();
 export const demoCalls: CallRecord[] = [
   {
     callerLabel: "Amelia Carter",
+    booked: false,
+    bookingReference: null,
     caller_number_hash: null,
     caller_number_last4: "0123",
     clinic_id: demoClinic.id,
@@ -89,6 +97,8 @@ export const demoCalls: CallRecord[] = [
     recovery_status: "queued",
     recovery_updated_at: now,
     intentLabel: "New patient appointment",
+    outcomeLabel: "Recovery queued",
+    recordingLabel: "Open call",
     started_at: now,
     status: "missed",
     transcriptPreview: "Caller asked for the next available consultation and left a mobile number.",
@@ -97,6 +107,8 @@ export const demoCalls: CallRecord[] = [
   },
   {
     callerLabel: "Noah Patel",
+    booked: false,
+    bookingReference: null,
     caller_number_hash: null,
     caller_number_last4: "0456",
     clinic_id: demoClinic.id,
@@ -116,6 +128,8 @@ export const demoCalls: CallRecord[] = [
     recovery_status: "closed",
     recovery_updated_at: now,
     intentLabel: "Cancellation or reschedule",
+    outcomeLabel: "Answered",
+    recordingLabel: "Open call",
     started_at: now,
     status: "answered",
     transcriptPreview: "Patient asked to move an existing appointment to next week.",
@@ -157,22 +171,37 @@ function transcriptPreviewFromTranscript(transcript?: LiveTranscriptRow | null) 
   return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
-function enrichCalls(calls: LiveCallRow[], leads: CallLead[], transcriptsByCallId: Map<string, LiveTranscriptRow>): CallRecord[] {
+function enrichCalls(input: {
+  appointmentsByCallId: Map<string, LiveAppointmentRow>;
+  bookingRequestsByCallId: Map<string, LiveBookingRequestRow>;
+  calls: LiveCallRow[];
+  leads: CallLead[];
+  transcriptsByCallId: Map<string, LiveTranscriptRow>;
+}): CallRecord[] {
+  const { appointmentsByCallId, bookingRequestsByCallId, calls, leads, transcriptsByCallId } = input;
   const leadsById = new Map(leads.map((lead) => [lead.id, lead]));
 
   return calls.map((call) => {
     const lead = call.lead_id ? leadsById.get(call.lead_id) : undefined;
     const transcript = transcriptsByCallId.get(call.id) ?? null;
+    const appointment = appointmentsByCallId.get(call.id) ?? null;
+    const bookingRequest = bookingRequestsByCallId.get(call.id) ?? null;
     const transcriptPreview = transcriptPreviewFromTranscript(transcript);
     const sourceText = [lead?.enquiry_summary, transcriptPreview].filter(Boolean).join(" ");
     const intent = classifyVoiceIntent(sourceText);
     const urgencyDetails = extractVoiceCaptureDetails(sourceText);
+    const booked = appointment?.status === "confirmed";
+    const bookingReference = appointment?.confirmation_reference ?? bookingRequest?.confirmation_reference ?? null;
     return {
       ...call,
+      booked,
+      bookingReference,
       callerLabel: callerLabel(call, lead),
       estimatedValuePence: lead?.estimated_value_pence ?? null,
       intentLabel: voiceIntentLabel(intent),
       leadSummary: lead?.enquiry_summary ?? null,
+      outcomeLabel: booked ? "Appointment booked" : bookingRequest ? "Booking request" : call.recovery_next_action ?? call.recovery_status ?? call.status,
+      recordingLabel: "Open call",
       transcriptPreview,
       urgencyScore: estimateVoiceUrgency(intent, urgencyDetails),
     };
@@ -241,12 +270,50 @@ export async function getCallListData(user: Pick<User, "email" | "id" | "user_me
       transcriptsByCallId.set(key, item);
     }
   }
+  const appointmentsResult = callIds.length
+    ? await supabase
+        .from("appointments")
+        .select("id,call_id,confirmation_reference,status,appointment_start")
+        .eq("clinic_id", membership.clinic_id)
+        .in("call_id", callIds)
+        .is("deleted_at", null)
+        .order("appointment_start", { ascending: false })
+        .returns<LiveAppointmentRow[]>()
+    : { data: [] as LiveAppointmentRow[], error: null };
+  const bookingRequestsResult = callIds.length
+    ? await supabase
+        .from("booking_requests")
+        .select("id,call_id,confirmation_reference,status")
+        .eq("clinic_id", membership.clinic_id)
+        .in("call_id", callIds)
+        .is("deleted_at", null)
+        .order("requested_at", { ascending: false })
+        .returns<LiveBookingRequestRow[]>()
+    : { data: [] as LiveBookingRequestRow[], error: null };
+  const appointmentsByCallId = new Map<string, LiveAppointmentRow>();
+  for (const appointment of appointmentsResult.data ?? []) {
+    if (appointment.call_id && !appointmentsByCallId.has(appointment.call_id)) {
+      appointmentsByCallId.set(appointment.call_id, appointment);
+    }
+  }
+  const bookingRequestsByCallId = new Map<string, LiveBookingRequestRow>();
+  for (const request of bookingRequestsResult.data ?? []) {
+    if (request.call_id && !bookingRequestsByCallId.has(request.call_id)) {
+      bookingRequestsByCallId.set(request.call_id, request);
+    }
+  }
 
   return buildCallListData({
     canAddDemoCall: ["admin", "owner"].includes(membership.role),
-    calls: enrichCalls(liveCalls, leadsResult.data ?? [], transcriptsByCallId),
+    calls: enrichCalls({
+      appointmentsByCallId,
+      bookingRequestsByCallId,
+      calls: liveCalls,
+      leads: leadsResult.data ?? [],
+      transcriptsByCallId,
+    }),
     clinic: clinic ?? null,
-    error: clinicError || callsResult.error || leadsResult.error ? "Could not load call records." : null,
+    error: clinicError || callsResult.error || leadsResult.error || appointmentsResult.error || bookingRequestsResult.error ? "Could not load call records." : null,
     source: "supabase",
   });
 }

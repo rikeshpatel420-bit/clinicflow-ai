@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/navigation/site-header";
 
 const nav = [
   { href: "/integrations", label: "Integrations" },
+  { href: "/connections", label: "Connections" },
   { href: "/sync", label: "Sync monitor" },
   { href: "/operations", label: "Operations" },
 ];
@@ -23,7 +24,7 @@ export function IntegrationShell({
 }) {
   return (
     <main className="min-h-screen bg-[#eef4f2] text-[#17211f]">
-      <SiteHeader activePath="/integrations/twilio" variant="app" />
+      <SiteHeader activePath={active} variant="app" />
       <section className="mx-auto grid max-w-[84rem] gap-6 px-4 py-8 sm:px-6 md:px-8">
         <header className="rounded-lg bg-[#10201d] p-6 text-white shadow-sm">
           <p className="text-sm font-semibold text-[#72e5d3]">{eyebrow}</p>

@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start:production": "node scripts/validate-production-env.mjs && next start",
     "flow-platform:smoke": "npx tsx scripts/flow-platform-smoke.ts",
     "flow-factory:smoke": "npx tsx scripts/flow-factory-smoke.ts",
     "flow-products:smoke": "npx tsx scripts/flow-products-smoke.ts",
@@ -14,10 +13,6 @@
     "clinicflow:booking-consistency-smoke": "npx tsx scripts/clinicflow-booking-consistency-smoke.ts",
     "clinicflow:conversation-simulations": "npx tsx scripts/clinicflow-conversation-simulations.ts",
     "clinicflow:voice-smoke": "npx tsx scripts/clinicflow-voice-smoke.ts",
-    "trading:webhook-tests": "npx tsx scripts/tradingview-webhook-tests.ts",
-    "trading:ii-manual-tests": "npx tsx scripts/interactive-investor-manual-bridge-tests.ts",
-    "trading:database-tests": "npx tsx scripts/trading-database-persistence-tests.ts",
-    "test:trading": "npm run trading:webhook-tests && npm run trading:ii-manual-tests",
     "saas:smoke": "npx tsx scripts/saas-smoke.ts",
     "customer:smoke": "npx tsx scripts/customer-experience-smoke.ts",
     "start": "next start",

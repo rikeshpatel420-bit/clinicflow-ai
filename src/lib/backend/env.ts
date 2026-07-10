@@ -17,14 +17,10 @@ export type BackendEnv = {
   twilioWebhookDebugMode?: boolean;
   twilioWebhookSigningSecret?: string;
   twilioWebhookTestMode?: boolean;
-  tradingBotMode: "PAPER" | "SIGNAL_ONLY";
-  tradingViewWebhookAllowInsecureLocalhost: boolean;
-  tradingViewWebhookSecret?: string;
-  liveTradingEnabled: false;
 };
 
 function resolveSiteUrl() {
-  const explicitSiteUrl = process.env.APP_BASE_URL?.trim() ?? process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const explicitSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (explicitSiteUrl) {
     return explicitSiteUrl.replace(/\/$/, "");
   }
@@ -50,7 +46,7 @@ export function getBackendEnv(): BackendEnv {
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
     twilioConfigEncryptionSecret: process.env.TWILIO_CONFIG_ENCRYPTION_SECRET,
     twilioAccountSid: process.env.TWILIO_ACCOUNT_SID,
     twilioAuthToken: process.env.TWILIO_AUTH_TOKEN,
@@ -62,25 +58,6 @@ export function getBackendEnv(): BackendEnv {
     twilioWebhookTestMode: process.env.TWILIO_WEBHOOK_TEST_MODE
       ? process.env.TWILIO_WEBHOOK_TEST_MODE !== "false"
       : !isProduction,
-    tradingBotMode: process.env.SIGNAL_MODE === "PAPER" || process.env.TRADING_BOT_MODE === "PAPER" ? "PAPER" : "SIGNAL_ONLY",
-    tradingViewWebhookAllowInsecureLocalhost: process.env.TRADINGVIEW_WEBHOOK_ALLOW_INSECURE_LOCALHOST === "true" && !isProduction,
-    tradingViewWebhookSecret: process.env.TRADINGVIEW_WEBHOOK_SECRET,
-    liveTradingEnabled: false,
-  };
-}
-
-export function validateTradingProductionEnv() {
-  const env = getBackendEnv();
-  const missing: string[] = [];
-
-  if (!env.tradingViewWebhookSecret || env.tradingViewWebhookSecret.length < 32) missing.push("TRADINGVIEW_WEBHOOK_SECRET");
-  if (!env.supabaseUrl) missing.push("SUPABASE_URL");
-  if (!env.supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!env.siteUrl.startsWith("https://") && process.env.NODE_ENV === "production") missing.push("APP_BASE_URL");
-
-  return {
-    ok: missing.length === 0,
-    missing,
   };
 }
 

@@ -11,6 +11,7 @@
     "flow-workflow:smoke": "npx tsx scripts/flow-workflow-smoke.ts",
     "clinicflow:call-quality-smoke": "npx tsx scripts/clinicflow-call-quality-smoke.ts",
     "clinicflow:booking-consistency-smoke": "npx tsx scripts/clinicflow-booking-consistency-smoke.ts",
+    "clinicflow:auth-smoke": "npx tsx scripts/clinicflow-auth-smoke.ts",
     "clinicflow:conversation-simulations": "npx tsx scripts/clinicflow-conversation-simulations.ts",
     "clinicflow:voice-smoke": "npx tsx scripts/clinicflow-voice-smoke.ts",
     "saas:smoke": "npx tsx scripts/saas-smoke.ts",

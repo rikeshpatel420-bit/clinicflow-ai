@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "_tv_profile_copy", "outputs", "semi-swing-bot", "scripts/__pycache__"]
 }

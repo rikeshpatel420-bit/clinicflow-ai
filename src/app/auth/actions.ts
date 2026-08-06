@@ -2,12 +2,28 @@
 
 import { redirect } from "next/navigation";
 import { getBackendEnv } from "@/lib/backend/env";
-import { createClinicWorkspaceForUser, getActiveClinicMembershipForUser } from "@/lib/auth/clinic-workspace";
+import { createClinicWorkspaceForUser, resolveClinicAccessForUser } from "@/lib/auth/clinic-workspace";
+import { logPasswordRecoveryAttempt } from "@/lib/auth/diagnostics";
+import {
+  initialPasswordResetState,
+  initialPasswordUpdateState,
+  loginErrorMessage,
+  requestPasswordReset,
+  updatePassword,
+  type PasswordResetState,
+  type PasswordUpdateState,
+} from "@/lib/auth/flows";
+import { clearPasswordRecoveryContext, hasPasswordRecoveryContext } from "@/lib/auth/recovery-context";
+import { normalizeEmail, safeNextPath } from "@/lib/auth/validation";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function formValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
+}
+
+function rawFormValue(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "");
 }
 
 function redirectWithMessage(pathname: string, type: "error" | "message", message: string): never {
@@ -16,8 +32,7 @@ function redirectWithMessage(pathname: string, type: "error" | "message", messag
 }
 
 function nextPath(formData: FormData) {
-  const value = formValue(formData, "next");
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
+  return safeNextPath(formValue(formData, "next"));
 }
 
 export async function loginAction(formData: FormData) {
@@ -27,8 +42,8 @@ export async function loginAction(formData: FormData) {
     redirectWithMessage("/login", "error", "Supabase is not configured.");
   }
 
-  const email = formValue(formData, "email");
-  const password = formValue(formData, "password");
+  const email = normalizeEmail(formValue(formData, "email"));
+  const password = rawFormValue(formData, "password");
 
   if (!email || !password) {
     redirectWithMessage("/login", "error", "Email and password are required.");
@@ -38,14 +53,21 @@ export async function loginAction(formData: FormData) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.user) {
-    redirectWithMessage("/login", "error", "Invalid email or password.");
+    redirectWithMessage("/login", "error", loginErrorMessage(error));
   }
 
   const user = data.user;
-  const membership = await getActiveClinicMembershipForUser(user);
+  const access = await resolveClinicAccessForUser(user);
 
-  if (!membership) {
-    redirect("/onboarding");
+  if (access.reason) {
+    await supabase.auth.signOut();
+    const accessError = {
+      "inactive-clinic": "Your clinic workspace is not active. Contact ClinicFlow support.",
+      "inactive-membership": "Your clinic membership is not active. Ask the clinic owner to restore access.",
+      "missing-clinic": "Your clinic workspace could not be found. Contact ClinicFlow support.",
+      "missing-membership": "Your account is not linked to an active clinic. Contact ClinicFlow support.",
+    }[access.reason];
+    redirectWithMessage("/login", "error", accessError);
   }
 
   redirect(nextPath(formData));
@@ -61,7 +83,7 @@ export async function signupAction(formData: FormData) {
   const clinicName = formValue(formData, "clinicName");
   const fullName = formValue(formData, "fullName");
   const email = formValue(formData, "email");
-  const password = formValue(formData, "password");
+  const password = rawFormValue(formData, "password");
 
   if (!clinicName || !fullName || !email || password.length < 8) {
     redirectWithMessage("/signup", "error", "Enter clinic name, owner name, email, and an 8+ character password.");
@@ -76,7 +98,7 @@ export async function signupAction(formData: FormData) {
         clinic_name: clinicName,
         full_name: fullName,
       },
-      emailRedirectTo: `${siteUrl}/dashboard`,
+      emailRedirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent("/dashboard")}`,
     },
     password,
   });
@@ -111,4 +133,63 @@ export async function logoutAction() {
   }
 
   redirect("/login");
+}
+
+export async function requestPasswordResetAction(
+  previousState: PasswordResetState = initialPasswordResetState,
+  formData: FormData,
+): Promise<PasswordResetState> {
+  void previousState;
+  const email = formValue(formData, "email");
+  const { isSupabaseConfigured } = getSupabaseEnv();
+  const { siteUrl } = getBackendEnv();
+
+  if (!isSupabaseConfigured) {
+    const normalizedEmail = normalizeEmail(email);
+    logPasswordRecoveryAttempt({
+      accepted: false,
+      email: normalizedEmail,
+      errorCode: "supabase_not_configured",
+      rateLimited: false,
+      redirectOrigin: siteUrl,
+    });
+    return { message: "Password recovery is temporarily unavailable. Contact ClinicFlow support.", status: "error" };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const redirectTo = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}&type=recovery`;
+  const result = await requestPasswordReset(supabase, { email, redirectTo });
+  logPasswordRecoveryAttempt({
+    ...result.diagnostic,
+    redirectOrigin: siteUrl,
+  });
+  return result.state;
+}
+
+export async function updatePasswordAction(
+  previousState: PasswordUpdateState = initialPasswordUpdateState,
+  formData: FormData,
+): Promise<PasswordUpdateState> {
+  void previousState;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user || !(await hasPasswordRecoveryContext(user.id))) {
+    return {
+      message: "This reset session has expired. Request a new password-reset link.",
+      status: "error",
+    };
+  }
+
+  const result = await updatePassword(supabase, {
+    confirmation: rawFormValue(formData, "confirmation"),
+    password: rawFormValue(formData, "password"),
+  });
+  if (result) return result;
+
+  await supabase.auth.signOut();
+  await clearPasswordRecoveryContext();
+  redirectWithMessage("/login", "message", "Password updated. Log in with your new password.");
 }

@@ -1,11 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { protectedRoutes } from "@/config/navigation";
+import { isProtectedRoute, requestedRoute } from "@/lib/auth/routing";
 import type { Database } from "@/types/database";
-
-function isProtectedRoute(pathname: string) {
-  return protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-}
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -13,6 +9,14 @@ export async function middleware(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (process.env.NODE_ENV === "production" && isProtectedRoute(request.nextUrl.pathname)) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/login";
+      redirectUrl.search = "";
+      redirectUrl.searchParams.set("next", requestedRoute(request));
+      redirectUrl.searchParams.set("error", "Authentication is temporarily unavailable.");
+      return NextResponse.redirect(redirectUrl);
+    }
     return response;
   }
 
@@ -31,16 +35,18 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
+  const user = error ? null : data.user;
 
   if (!user && isProtectedRoute(request.nextUrl.pathname)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
-    redirectUrl.searchParams.set("next", request.nextUrl.pathname);
+    redirectUrl.search = "";
+    redirectUrl.searchParams.set("next", requestedRoute(request));
     return NextResponse.redirect(redirectUrl);
   }
+
+  response.headers.set("Cache-Control", "private, no-store");
 
   return response;
 }

@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "_tv_profile_copy/**",
+    "outputs/**",
+    "semi-swing-bot/**",
+    "scripts/__pycache__/**",
   ]),
 ]);
 

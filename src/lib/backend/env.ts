@@ -1,3 +1,5 @@
+import { appConfig } from "@/config/app";
+
 export type BackendEnv = {
   cronSecret?: string;
   siteUrl: string;
@@ -23,6 +25,11 @@ function resolveSiteUrl() {
   const explicitSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (explicitSiteUrl) {
     return explicitSiteUrl.replace(/\/$/, "");
+  }
+
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  if (isProduction) {
+    return appConfig.productionUrl;
   }
 
   const vercelUrl = process.env.VERCEL_URL?.trim();

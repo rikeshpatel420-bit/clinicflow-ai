@@ -2,7 +2,26 @@ import type { User } from "@supabase/supabase-js";
 import { syncOnboardingProfile } from "@/lib/onboarding";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { AppUser, ClinicUser } from "@/types/database";
+import type { AppUser, Clinic, ClinicUser } from "@/types/database";
+
+export type ClinicAccessResult =
+  | { clinic: Clinic; membership: ClinicUser; reason: null }
+  | {
+      clinic: null;
+      membership: ClinicUser | null;
+      reason: "inactive-clinic" | "inactive-membership" | "missing-clinic" | "missing-membership";
+    };
+
+export function classifyClinicAccess(
+  membership: Pick<ClinicUser, "role" | "status"> | null,
+  clinic: Pick<Clinic, "deleted_at" | "name" | "status"> | null,
+) {
+  if (!membership) return "missing-membership" as const;
+  if (membership.status !== "active") return "inactive-membership" as const;
+  if (!clinic) return "missing-clinic" as const;
+  if (clinic.status !== "active" || clinic.deleted_at) return "inactive-clinic" as const;
+  return null;
+}
 
 function slugify(value: string) {
   return value
@@ -46,41 +65,60 @@ export async function getOrCreateAppUserForAuthUser(
 ): Promise<AppUser | null> {
   const now = new Date().toISOString();
   const email = user.email?.toLowerCase() ?? null;
+  const profile = {
+    auth_user_id: user.id,
+    email,
+    full_name: userDisplayName(user),
+    last_seen_at: now,
+    updated_at: now,
+  };
 
   try {
     const admin = createSupabaseAdminClient();
+    const { data: existing } = await admin
+      .from("users")
+      .select("*")
+      .eq("auth_user_id", user.id)
+      .maybeSingle<AppUser>();
+
+    if (existing) {
+      const { data } = await admin
+        .from("users")
+        .update(profile)
+        .eq("id", existing.id)
+        .select("*")
+        .single<AppUser>();
+      return data ?? existing;
+    }
+
     const { data } = await admin
       .from("users")
-      .upsert(
-        {
-          auth_user_id: user.id,
-          email,
-          full_name: userDisplayName(user),
-          last_seen_at: now,
-          status: "active",
-          updated_at: now,
-        },
-        { onConflict: "auth_user_id" },
-      )
+      .insert({ ...profile, status: "active" })
       .select("*")
       .single<AppUser>();
 
     return data ?? null;
   } catch {
     const supabase = await createSupabaseServerClient();
+    const { data: existing } = await supabase
+      .from("users")
+      .select("*")
+      .eq("auth_user_id", user.id)
+      .maybeSingle<AppUser>();
+
+    if (existing) {
+      const { data } = await supabase
+        .from("users")
+        .update(profile)
+        .eq("id", existing.id)
+        .select("*")
+        .single<AppUser>();
+      return data ?? existing;
+    }
+
     const { data } = await supabase
       .from("users")
-      .upsert(
-        {
-          auth_user_id: user.id,
-          email,
-          full_name: userDisplayName(user),
-          last_seen_at: now,
-          status: "active",
-          updated_at: now,
-        },
-        { onConflict: "auth_user_id" },
-      )
+      .insert({ ...profile, status: "active" })
       .select("*")
       .single<AppUser>();
 
@@ -182,6 +220,47 @@ export async function getActiveClinicMembershipForUser(
     .maybeSingle<ClinicUser>();
 
   return data ?? null;
+}
+
+export async function resolveClinicAccessForUser(
+  user: Pick<User, "email" | "id" | "user_metadata">,
+): Promise<ClinicAccessResult> {
+  const appUser = await getOrCreateAppUserForAuthUser(user);
+  if (appUser?.status === "disabled") {
+    return { clinic: null, membership: null, reason: "inactive-membership" };
+  }
+
+  const membership = await getActiveClinicMembershipForUser(user);
+
+  if (!membership) {
+    try {
+      const admin = createSupabaseAdminClient();
+      let query = admin.from("clinic_users").select("*").order("created_at", { ascending: true });
+      query = appUser?.id
+        ? query.or(`auth_user_id.eq.${user.id},user_id.eq.${appUser.id}`)
+        : query.eq("auth_user_id", user.id);
+      const { data } = await query.limit(1).maybeSingle<ClinicUser>();
+      return { clinic: null, membership: data ?? null, reason: data ? "inactive-membership" : "missing-membership" };
+    } catch {
+      return { clinic: null, membership: null, reason: "missing-membership" };
+    }
+  }
+
+  try {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>();
+    if (!data) return { clinic: null, membership, reason: "missing-clinic" };
+    const reason = classifyClinicAccess(membership, data);
+    if (reason) return { clinic: null, membership, reason };
+    return { clinic: data, membership, reason: null };
+  } catch {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase.from("clinics").select("*").eq("id", membership.clinic_id).maybeSingle<Clinic>();
+    if (!data) return { clinic: null, membership, reason: "missing-clinic" };
+    const reason = classifyClinicAccess(membership, data);
+    if (reason) return { clinic: null, membership, reason };
+    return { clinic: data, membership, reason: null };
+  }
 }
 
 export async function createClinicWorkspaceForUser({
